@@ -1,0 +1,2220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DASHBOARD MEP - Inventaris Aset</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#123E48">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Dashboard MEP">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+<script>
+  // ============== MAINTENANCE CHECKLIST BACKEND (Google Sheets) ==============
+  // Templates, checklists, and photos for the Maintenance Checklist module are stored in a
+  // Google Sheet (photos go to a Drive folder), so every device sees the same data \u2014 no
+  // separate database service to sign up for, reusing the same Google account as the rest
+  // of this dashboard.
+  //
+  // SETUP (one-time, ~5 minutes):
+  //  1. Create a new blank Google Sheet (any name). Copy its ID from the URL:
+  //     https://docs.google.com/spreadsheets/d/ >>>THIS_PART<<< /edit
+  //  2. In that Sheet: Extensions -> Apps Script. Delete the placeholder code and paste in
+  //     the Code.gs script provided alongside this file.
+  //  3. In Code.gs, set SPREADSHEET_ID to the ID you copied in step 1.
+  //  4. Click Deploy -> New deployment -> gear icon -> Web app.
+  //     Execute as: Me. Who has access: Anyone. Click Deploy, authorize when prompted.
+  //  5. Copy the Web app URL it gives you and paste it below as MCL_SHEETS_WEBAPP_URL.
+  //  6. Save this file and reopen the Maintenance Checklist tab \u2014 it connects automatically.
+  //
+  // Until this is filled in, the Maintenance Checklist tab shows setup instructions instead
+  // of crashing, so the rest of the dashboard keeps working normally either way.
+  const MCL_SHEETS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxSxLlgmj630Tv1Z7dkFdenkLNZP8Qxi6Fidy25joVek9p3GnoZyuKo7buXUPJ2B-kVBQ/exec";
+  window.MCL_SHEETS_CONFIGURED = !MCL_SHEETS_WEBAPP_URL.startsWith("PASTE_");
+  window.MCL_SHEETS_WEBAPP_URL = MCL_SHEETS_WEBAPP_URL;
+</script>
+<style>
+  :root{
+    --teal:#123E48; --teal2:#0d2f37; --teal-l:#1c5663;
+    --mint:#9FE0C8; --green:#8BC34A; --green-d:#6FA53A;
+    --lime:#AEEA00; --bg:#F3F4F6; --card:#fff; --title:#123E48;
+    --muted:#6b7b80; --border:#e3e7e9;
+    --mcl-gold:#E8A400; --mcl-gold-d:#B87E00; --mcl-cream:#FAF7EE;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Segoe UI',Calibri,Arial,sans-serif;background:var(--bg);color:#1d2b30;}
+  /* Header */
+  header{background:linear-gradient(90deg,var(--teal),var(--teal-l));color:#fff;
+    display:flex;align-items:center;justify-content:space-between;padding:12px 22px;
+    box-shadow:0 2px 6px rgba(0,0,0,.15);position:sticky;top:0;z-index:20;}
+  header .ttl{font-size:20px;font-weight:700;letter-spacing:.3px;}
+  header .ttl .accent{color:var(--lime);}
+  header .admin{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);
+    padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;letter-spacing:1px;}
+  header .hdr-right{display:flex;align-items:center;gap:14px;}
+  header .updated{font-size:11px;color:#cfe9df;opacity:.85;white-space:nowrap;}
+  header .refresh{background:var(--lime);color:var(--teal);border:none;border-radius:20px;
+    padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;transition:.15s;}
+  header .refresh:hover{filter:brightness(1.05);}
+  header .refresh:disabled{opacity:.5;cursor:default;}
+  header .refresh.spin{animation:pulse 1s linear infinite;}
+  @keyframes pulse{50%{opacity:.55;}}
+  /* Layout */
+  .wrap{display:flex;min-height:calc(100vh - 56px);}
+  /* Sidebar */
+  aside{width:215px;background:var(--teal);color:#dfeef0;padding:14px 0;flex-shrink:0;}
+  aside .menu-h{font-size:11px;font-weight:700;letter-spacing:2px;color:#cfe9df;
+    padding:6px 18px 10px;opacity:.8;}
+  .cat{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    width:calc(100% - 24px);margin:6px 12px 2px;padding:9px 12px;background:transparent;
+    border:none;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:1px;
+    color:var(--mint);text-transform:uppercase;text-align:left;border-radius:6px;
+    transition:.15s;font-family:inherit;}
+  .cat:hover{background:rgba(255,255,255,.08);}
+  .cat.expanded{color:#fff;background:rgba(174,234,0,.14);}
+  .cat .chev{font-size:10px;transition:transform .18s ease;opacity:.8;flex-shrink:0;}
+  .cat.expanded .chev{transform:rotate(90deg);}
+  .subwrap{display:none;padding-bottom:4px;}
+  .subwrap.open{display:block;}
+  .navbtn{display:block;width:calc(100% - 24px);margin:4px 12px;padding:8px 12px;
+    background:var(--green);color:#fff;border:none;border-radius:6px;text-align:left;
+    font-size:12.5px;cursor:pointer;transition:.15s;font-weight:500;}
+  .navbtn:hover{background:var(--green-d);transform:translateX(2px);}
+  .navbtn.active{background:var(--lime);color:var(--teal);font-weight:700;
+    box-shadow:0 0 0 2px rgba(174,234,0,.35);}
+  /* Main */
+  main{flex:1;padding:22px 26px;min-width:0;}
+  .content-title{font-size:22px;font-weight:700;color:var(--title);}
+  .accent-bar{width:90px;height:4px;background:var(--lime);border-radius:3px;margin:8px 0 18px;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;
+    padding:18px 20px 22px;box-shadow:0 4px 14px rgba(18,62,72,.06);min-height:520px;
+    display:flex;flex-direction:column;}
+  .chart-wrap{position:relative;flex:1;min-height:480px;}
+  .status{font-size:13px;color:var(--muted);padding:30px;text-align:center;}
+  .status.err{color:#c0392b;}
+  .kpis{display:flex;gap:14px;margin-bottom:16px;flex-wrap:wrap;}
+  .kpi{background:#fff;border:1px solid var(--border);border-left:4px solid var(--green);
+    border-radius:8px;padding:10px 16px;min-width:120px;box-shadow:0 2px 6px rgba(18,62,72,.05);}
+  .kpi .v{font-size:22px;font-weight:700;color:var(--teal);}
+  .kpi .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+  /* Home / Overview */
+  .homebtn{width:calc(100% - 24px);margin:8px 12px 12px;padding:11px 12px;background:var(--teal);
+    color:#fff;border:none;border-radius:6px;text-align:left;font-size:13px;font-weight:700;
+    cursor:pointer;transition:.15s;font-family:inherit;display:flex;align-items:center;gap:8px;}
+  .homebtn:hover{background:var(--teal-l);}
+  .homebtn.active{background:var(--lime);color:var(--teal);box-shadow:0 0 0 2px rgba(174,234,0,.35);}
+  .home-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+  .mini-card{background:var(--card);border:1px solid var(--border);border-radius:12px;
+    padding:14px 16px 16px;box-shadow:0 4px 14px rgba(18,62,72,.06);
+    display:flex;flex-direction:column;min-height:312px;}
+  .mini-h{font-size:13px;font-weight:700;color:var(--title);margin-bottom:6px;}
+  .mini-wrap{position:relative;flex:1;min-height:255px;}
+  @media(max-width:1300px){.home-grid{grid-template-columns:repeat(2,1fr);}}
+  @media(max-width:760px){.home-grid{grid-template-columns:1fr;}}
+  /* Filter panel */
+  .filter{width:205px;background:#fff;border-left:1px solid var(--border);padding:16px 14px;flex-shrink:0;}
+  .filter h3{font-size:11px;font-weight:700;letter-spacing:1px;color:#12505A;
+    padding-bottom:10px;border-bottom:2px solid var(--lime);margin-bottom:12px;text-transform:uppercase;}
+  .fbtn{display:block;width:100%;margin:6px 0;padding:8px 10px;background:var(--green);
+    color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;transition:.15s;text-align:left;}
+  .fbtn:hover{background:var(--green-d);}
+  .fbtn.active{background:var(--teal);box-shadow:0 0 0 2px rgba(18,62,72,.25);}
+  .filter .hint{font-size:10.5px;color:var(--muted);margin-top:14px;line-height:1.4;font-style:italic;}
+  .filter.dim{opacity:.45;pointer-events:none;}
+  footer{padding:10px 26px;font-size:11px;color:var(--muted);text-align:center;}
+  @media(max-width:1100px){.filter{display:none;}aside{width:185px;}}
+  /* Header bell + badges */
+  header .bell{position:relative;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);
+    color:#fff;border-radius:20px;padding:5px 12px;font-size:14px;line-height:1;cursor:pointer;transition:.15s;}
+  header .bell:hover{background:rgba(255,255,255,.2);}
+  .badge{display:inline-block;min-width:17px;height:17px;line-height:17px;text-align:center;
+    font-size:10px;font-weight:800;border-radius:9px;padding:0 4px;color:#fff;background:#e74c3c;}
+  .badge.warn{background:#f39c12;}
+  .hdr-badge{position:absolute;top:-5px;right:-4px;box-shadow:0 0 0 2px var(--teal);}
+  /* Module tier in sidebar */
+  .modbtn{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    width:calc(100% - 24px);margin:8px 12px 4px;padding:11px 12px;background:var(--teal2);
+    color:#fff;border:none;border-radius:6px;text-align:left;font-size:12.5px;font-weight:700;
+    letter-spacing:.4px;cursor:pointer;transition:.15s;font-family:inherit;}
+  .modbtn:hover{background:var(--teal-l);}
+  .modbtn.expanded{background:rgba(174,234,0,.16);color:#fff;box-shadow:inset 0 0 0 1px rgba(174,234,0,.4);}
+  .modbtn .chev{font-size:10px;transition:transform .18s ease;opacity:.85;flex-shrink:0;}
+  .modbtn.expanded .chev{transform:rotate(90deg);}
+  .modwrap{display:none;margin-left:8px;border-left:2px solid rgba(174,234,0,.22);}
+  .modwrap.open{display:block;}
+  .modwrap .cat{width:calc(100% - 28px);margin:6px 8px 2px 8px;}
+  .modwrap .navbtn{width:calc(100% - 28px);margin:4px 8px 4px 16px;}
+  /* Alerts nav button */
+  .alertbtn{display:flex;align-items:center;gap:8px;width:calc(100% - 24px);margin:0 12px 4px;
+    padding:10px 12px;background:var(--teal);color:#fff;border:none;border-radius:6px;text-align:left;
+    font-size:13px;font-weight:700;cursor:pointer;transition:.15s;font-family:inherit;}
+  .alertbtn:hover{background:var(--teal-l);}
+  .alertbtn.active{background:var(--lime);color:var(--teal);box-shadow:0 0 0 2px rgba(174,234,0,.35);}
+  .alertbtn .badge{margin-left:auto;}
+  /* Overview alert banner */
+  .alert-banner{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:13px 18px;
+    border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer;border:1px solid;transition:.15s;}
+  .alert-banner.crit{background:#fdecec;border-color:#f5b7b1;color:#922b21;}
+  .alert-banner.warn{background:#fef5e7;border-color:#fad7a0;color:#9c640c;}
+  .alert-banner .big{font-size:20px;}
+  .alert-banner .go{margin-left:auto;font-size:12px;font-weight:700;opacity:.8;}
+  .alert-banner:hover{filter:brightness(.985);}
+  /* Alerts view */
+  .alert-filters{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+  .alert-filters .af{padding:7px 14px;border:1px solid var(--border);background:#fff;border-radius:18px;
+    font-size:12px;font-weight:600;cursor:pointer;color:var(--muted);transition:.15s;font-family:inherit;}
+  .alert-filters .af:hover{border-color:var(--green);}
+  .alert-filters .af.active{background:var(--teal);color:#fff;border-color:var(--teal);}
+  .atable{width:100%;border-collapse:collapse;font-size:13px;}
+  #alertTableWrap{overflow-x:auto;}
+  .atable th{text-align:left;font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;
+    color:var(--muted);padding:8px 12px;border-bottom:2px solid var(--border);}
+  .atable td{padding:10px 12px;border-bottom:1px solid var(--border);}
+  .atable tr:hover td{background:#fafbfb;}
+  .atable .asset-tag{font-weight:700;color:var(--teal);}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:14px;
+    font-size:11.5px;font-weight:700;}
+  .chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;}
+  .chip.critical{background:#fdecec;color:#c0392b;}
+  .chip.warning{background:#fef5e7;color:#b9770e;}
+  .all-clear{padding:48px 20px;text-align:center;color:var(--muted);}
+  .all-clear .ic{font-size:40px;display:block;margin-bottom:10px;}
+  /* Maintenance Schedule Log progress grid */
+  .maint-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,330px));gap:16px;}
+  .maint-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    margin:-2px 0 8px;font-size:11.5px;color:var(--muted);font-weight:600;}
+  .freq-pill{background:rgba(18,62,72,.08);color:var(--teal);border:1px solid rgba(18,62,72,.15);
+    border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700;letter-spacing:.3px;}
+  /* Maintenance section on the Overview */
+  .sec-title{font-size:13px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--teal);
+    margin:26px 2px 12px;padding-bottom:7px;border-bottom:2px solid rgba(18,62,72,.1);}
+  .msl-ov{display:grid;grid-template-columns:minmax(240px,1fr) 2fr;gap:16px;margin-bottom:16px;}
+  @media(max-width:760px){.msl-ov{grid-template-columns:1fr;}}
+  .msl-next{display:flex;flex-direction:column;justify-content:flex-start;}
+  .next-date{font-size:28px;font-weight:800;color:var(--teal);line-height:1.1;margin:6px 0 2px;}
+  .next-asset{font-size:14px;font-weight:800;color:var(--green);margin-bottom:4px;}
+  .next-sub{font-size:13px;color:var(--muted);font-weight:600;}
+  .next-lbl{display:inline-block;min-width:62px;font-size:10.5px;font-weight:700;letter-spacing:.5px;
+    text-transform:uppercase;color:#9aa6a9;}
+  .next-when{display:inline-block;margin:8px 0 2px;font-size:12px;font-weight:700;padding:4px 12px;
+    border-radius:14px;background:rgba(139,195,74,.16);color:#4e7a16;width:fit-content;}
+  .next-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px;}
+  .next-table th{text-align:left;font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);
+    padding:7px 10px;border-bottom:2px solid var(--border);}
+  .next-table td{padding:8px 10px;border-bottom:1px solid var(--border);}
+  .next-table td.num{color:var(--muted);font-weight:700;width:38px;}
+  .next-table tr:hover td{background:#fafbfb;}
+  .due-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px;}
+  .due-table th{text-align:left;font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);
+    padding:8px 12px;border-bottom:2px solid var(--border);}
+  .due-table td{padding:9px 12px;border-bottom:1px solid var(--border);}
+  .due-table tr:hover td{background:#fafbfb;}
+  .due-table .asset-tag{font-weight:700;color:var(--teal);}
+  .due-none{display:flex;align-items:center;gap:12px;padding:18px 8px 6px;}
+  .due-none .num{font-size:30px;font-weight:800;color:var(--green);}
+  .due-none .txt{font-size:14px;font-weight:600;color:var(--muted);}
+  /* Maintenance Checklist module */
+  .mcl-tabs{display:flex;gap:6px;margin-bottom:16px;border-bottom:2px solid var(--border);}
+  .mcl-tab{font-size:13px;font-weight:700;letter-spacing:.3px;padding:9px 16px;background:transparent;
+    border:none;cursor:pointer;color:var(--muted);border-bottom:3px solid transparent;
+    font-family:inherit;transition:.15s;}
+  .mcl-tab:hover{color:var(--title);}
+  .mcl-tab.active{color:var(--teal);border-bottom-color:var(--mcl-gold);}
+  .mcl-row{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:11px 4px;border-bottom:1px solid var(--border);}
+  .mcl-row:last-child{border-bottom:none;}
+  .mcl-row-main{font-weight:700;font-size:14px;color:var(--title);}
+  .mcl-row-sub{font-size:11.5px;color:var(--muted);margin-top:2px;}
+  .mcl-empty{font-size:13px;color:var(--muted);padding:30px;text-align:center;
+    border:1px dashed var(--border);border-radius:8px;}
+  .mcl-field{margin-bottom:14px;}
+  .mcl-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;
+    color:var(--teal);display:block;margin-bottom:6px;}
+  .mcl-input,.mcl-select,.mcl-textarea{width:100%;font-family:inherit;font-size:14px;
+    padding:9px 12px;border:1px solid var(--border);border-radius:6px;background:var(--mcl-cream);color:#1d2b30;}
+  .mcl-input:focus,.mcl-select:focus,.mcl-textarea:focus{outline:2px solid var(--mcl-gold);outline-offset:1px;
+    border-color:var(--mcl-gold);}
+  .mcl-textarea{resize:vertical;min-height:60px;}
+  .mcl-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media(max-width:700px){.mcl-form-grid{grid-template-columns:1fr;}}
+  .mcl-item-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
+  .mcl-item-row .mcl-input{flex:1;}
+  .mcl-check-item{border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:14px;background:#fff;}
+  .mcl-check-item-text{font-weight:700;font-size:14.5px;margin-bottom:12px;color:#1d2b30;}
+  .mcl-status-btns{display:flex;gap:8px;margin-bottom:10px;}
+  .mcl-status-btn{font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px;
+    padding:8px 16px;border-radius:6px;cursor:pointer;border:1px solid var(--border);
+    background:#fff;color:var(--teal);font-family:inherit;transition:.15s;}
+  .mcl-status-btn:hover{border-color:var(--mcl-gold);}
+  .mcl-status-btn.pass.active{background:var(--green);color:#fff;border-color:var(--green-d);}
+  .mcl-status-btn.fail.active{background:#c0392b;color:#fff;border-color:#a5311f;}
+  .mcl-status-btn.na.active{background:var(--muted);color:#fff;border-color:var(--muted);}
+  .mcl-stamp{display:inline-block;font-weight:800;font-size:11px;letter-spacing:.6px;
+    text-transform:uppercase;padding:3px 11px;border-radius:14px;}
+  .mcl-stamp.pass{background:#e5f1eb;color:var(--green-d);}
+  .mcl-stamp.fail{background:#fdecec;color:#c0392b;}
+  .mcl-toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--teal);
+    color:#fff;padding:11px 20px;border-radius:8px;font-size:13px;z-index:999;
+    box-shadow:0 4px 16px rgba(0,0,0,.25);}
+  .mcl-filters{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+  .mcl-filters .mcl-select{width:auto;min-width:170px;}
+  .mcl-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.42);display:flex;align-items:center;
+    justify-content:center;z-index:1000;padding:20px;}
+  .mcl-modal{background:#fff;border-radius:10px;max-width:560px;width:100%;max-height:85vh;
+    overflow-y:auto;padding:24px;}
+  .mcl-modal .sec-title{margin:0 0 16px;}
+  .mcl-upload-box{border:2px dashed var(--border);border-radius:10px;padding:26px 18px;text-align:center;
+    color:var(--muted);font-size:13px;margin-bottom:16px;}
+  .mcl-upload-box b{color:var(--teal);}
+  .mcl-modal.wide{max-width:900px;}
+  .mcl-doc-hint{font-size:11.5px;color:var(--muted);margin:2px 2px 10px;}
+  .mcl-panel .sec-title{border-bottom-color:var(--mcl-gold);}
+  .mcl-gold-btn{font-family:inherit;font-weight:800;font-size:12.5px;letter-spacing:.4px;
+    text-transform:uppercase;padding:11px 22px;background:var(--mcl-gold);color:#1d2b30;
+    border:none;border-radius:8px;cursor:pointer;transition:.15s;}
+  .mcl-gold-btn:hover{background:var(--mcl-gold-d);}
+  .mcl-gold-btn:disabled{opacity:.55;cursor:default;}
+  .mcl-photo-grid{display:flex;flex-wrap:wrap;gap:10px;}
+  .mcl-photo-thumb{position:relative;width:92px;height:92px;border-radius:8px;overflow:hidden;
+    border:1px solid var(--border);flex-shrink:0;}
+  .mcl-photo-thumb img{width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in;}
+  .mcl-photo-thumb button{position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;
+    border:none;background:rgba(0,0,0,.62);color:#fff;font-size:11px;line-height:20px;text-align:center;
+    cursor:pointer;padding:0;}
+  .mcl-photo-thumb button:hover{background:#c0392b;}
+  .mcl-hist-card{border:1px solid var(--border);border-radius:10px;margin-bottom:12px;background:#fff;overflow:hidden;}
+  .mcl-hist-card summary{list-style:none;cursor:pointer;}
+  .mcl-hist-card summary::-webkit-details-marker{display:none;}
+  .mcl-hist-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
+    padding:14px 16px;flex-wrap:wrap;}
+  .mcl-hist-card[open] .mcl-hist-head{border-bottom:1px solid var(--border);}
+  .mcl-hist-body{padding:12px 16px 16px;}
+  .mcl-hist-chevron{font-size:12px;color:var(--muted);transition:transform .15s ease;flex-shrink:0;
+    align-self:center;}
+  .mcl-hist-card[open] .mcl-hist-chevron{transform:rotate(180deg);}
+
+  /* ============== MOBILE LAYOUT ============== */
+  .hamburger{display:none;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);
+    color:#fff;border-radius:8px;width:36px;height:36px;font-size:18px;line-height:1;cursor:pointer;
+    flex-shrink:0;align-items:center;justify-content:center;}
+  .nav-backdrop{display:none;position:fixed;inset:0;background:rgba(10,20,22,.5);z-index:29;}
+  .nav-backdrop.open{display:block;}
+
+  @media(max-width:860px){
+    header{padding:10px 12px;gap:8px;}
+    .hamburger{display:flex;}
+    header .ttl{font-size:14.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    header .hdr-right{gap:8px;}
+    header .updated{display:none;}
+    header .admin{display:none;}
+    header .bell,header .refresh{padding:6px 10px;font-size:12px;}
+
+    .wrap{display:block;}
+    #asideNav{position:fixed;top:0;left:0;bottom:0;z-index:30;width:80vw;max-width:300px;
+      transform:translateX(-100%);transition:transform .22s ease;overflow-y:auto;
+      padding-top:16px;box-shadow:none;}
+    #asideNav.open{transform:translateX(0);box-shadow:6px 0 28px rgba(0,0,0,.35);}
+
+    main{padding:16px 14px 28px;width:100%;}
+    .content-title{font-size:19px;}
+    .filter{display:none !important;}
+
+    .kpis{gap:8px;}
+    .kpi{min-width:0;flex:1 1 130px;padding:9px 12px;}
+    .kpi .v{font-size:18px;}
+    .home-grid{grid-template-columns:1fr;}
+    .mini-card{min-height:260px;}
+    .mini-wrap{min-height:210px;}
+    .card{padding:14px 14px 18px;min-height:auto;}
+    .chart-wrap{min-height:320px;}
+    .msl-ov{grid-template-columns:1fr;}
+    .maint-grid{grid-template-columns:1fr;}
+
+    .mcl-tabs{overflow-x:auto;white-space:nowrap;flex-wrap:nowrap;}
+    .mcl-tab{padding:9px 12px;font-size:12.5px;}
+    .mcl-form-grid{grid-template-columns:1fr;}
+    .mcl-filters{flex-direction:column;}
+    .mcl-filters .mcl-select{width:100%;}
+    .mcl-modal,.mcl-modal.wide{max-width:94vw;width:94vw;padding:16px;max-height:88vh;}
+    .mcl-check-item{padding:12px;}
+    .mcl-row{flex-wrap:wrap;gap:8px;}
+
+    .atable{font-size:12px;}
+    .atable th,.atable td{padding:8px 6px;}
+    .alert-filters{gap:6px;}
+
+    button,.fbtn,.navbtn,.mcl-status-btn,.mcl-tab{min-height:34px;}
+  }
+  @media(max-width:420px){
+    header .ttl{font-size:13px;}
+    .kpi{flex-basis:100%;}
+    .content-title{font-size:17px;}
+  }
+</style>
+</head>
+<body>
+<header>
+  <button class="hamburger" id="hamburgerBtn" aria-label="Menu">&#9776;</button>
+  <div class="ttl">DASHBOARD <span class="accent">MEP</span> &nbsp;&mdash;&nbsp; Inventaris Aset</div>
+  <div class="hdr-right">
+    <span class="updated" id="updated">&mdash;</span>
+    <button class="bell" id="bellBtn" title="View alerts">&#x1F514;<span class="badge hdr-badge" id="hdrBadge" style="display:none;">0</span></button>
+    <button class="refresh" id="refreshBtn" title="Refresh now">&#x21bb; Refresh</button>
+    <div class="admin">ADMIN PANEL</div>
+  </div>
+</header>
+<div class="nav-backdrop" id="navBackdrop"></div>
+<div class="wrap">
+  <aside id="asideNav">
+    <div class="menu-h">CHART MENU</div>
+    <div id="nav"></div>
+  </aside>
+  <main>
+    <div class="content-title" id="contentTitle">Loading&hellip;</div>
+    <div class="accent-bar"></div>
+    <div id="homeView" style="display:none;">
+      <div class="alert-banner" id="alertBanner" style="display:none;"></div>
+      <div class="kpis" id="homeKpis"></div>
+      <div class="home-grid">
+        <div class="mini-card"><div class="mini-h">Lamps &mdash; Urgency (%)</div><div class="mini-wrap"><canvas id="hc_lamp"></canvas></div></div>
+        <div class="mini-card"><div class="mini-h">Calibration &mdash; Status (%)</div><div class="mini-wrap"><canvas id="hc_cal"></canvas></div></div>
+        <div class="mini-card"><div class="mini-h">Pumps &mdash; Urgency (%)</div><div class="mini-wrap"><canvas id="hc_pump"></canvas></div></div>
+        <div class="mini-card"><div class="mini-h">Water Heaters &mdash; Urgency (%)</div><div class="mini-wrap"><canvas id="hc_wh"></canvas></div></div>
+        <div class="mini-card"><div class="mini-h">Exhaust &mdash; Urgency (%)</div><div class="mini-wrap"><canvas id="hc_ex"></canvas></div></div>
+      </div>
+      <div class="sec-title">Maintenance Schedule Log</div>
+      <div class="msl-ov">
+        <div class="mini-card msl-prog">
+          <div class="mini-h">Overall Schedule Progress</div>
+          <div class="mini-wrap"><canvas id="ov_msl"></canvas></div>
+        </div>
+        <div class="mini-card msl-next" id="ovNearest"></div>
+      </div>
+      <div class="card" style="min-height:auto;">
+        <div class="mini-h" id="ovDueHead">Maintenance Due Today</div>
+        <div id="ovDueToday"></div>
+      </div>
+    </div>
+    <div id="chartView">
+      <div class="kpis" id="kpis"></div>
+      <div class="card">
+        <div class="chart-wrap">
+          <div class="status" id="status">Connecting to Google Sheets&hellip;</div>
+          <canvas id="chart" style="display:none;"></canvas>
+        </div>
+      </div>
+    </div>
+    <div id="alertsView" style="display:none;">
+      <div class="kpis" id="alertKpis"></div>
+      <div class="alert-filters" id="alertFilters"></div>
+      <div class="card" style="min-height:auto;">
+        <div id="alertTableWrap"></div>
+      </div>
+    </div>
+    <div id="maintView" style="display:none;">
+      <div class="kpis" id="maintKpis"></div>
+      <div class="maint-grid" id="maintGrid"></div>
+    </div>
+    <div id="mclView" style="display:none;">
+      <div class="mcl-tabs" id="mclTabs"></div>
+      <div id="mclContent"></div>
+    </div>
+  </main>
+  <div class="filter" id="filterPanel">
+    <h3 id="filterTitle">Filter &mdash; Area</h3>
+    <div id="filterBtns"></div>
+    <div class="hint">The Area filter is specific to the selected chart and is hidden when that chart has no area data.</div>
+  </div>
+</div>
+<footer>Live data &middot; Google Sheets &middot; MEP Asset Inventory</footer>
+
+<script>
+/* ============== CONFIG ============== */
+const SPREADSHEET_ID = "1BdTcaKLVvnDBycGK9KLJzmcgluoj87OD";
+// Tab names as they appear in the Google Sheet (must match exactly).
+const SHEETS = {
+  lamp:        "Pivot Table",         // clean flat lamp table (cols AB:AF) with an explicit Area column
+  calibration: "Calibration",
+  pump:        "Aset Pompa",
+  waterheater: "Water Heater",
+  exhaust:     "Exhaust"
+};
+// Column indices of the flat lamp table on the "Pivot Table" tab (AB=27 .. AF=31)
+const LAMP_COLS = { area:27, type:28, lokasi:29, condition:30, urgency:31 };
+
+/* Maintenance Schedule Log — two separate workbooks, summary lives on each one's first tab.
+   Both must be shared "Anyone with the link -> Viewer". If a summary is NOT the first tab,
+   replace "" below with "&sheet=Your Tab Name" or "&gid=123456". */
+const MAINT_ID = "1JoWLQYkThgwsCV0iq8TV3BGkRXLp53o0KR5rqpQbVRI";  // MEP Maintenance (calibration/WH/exhaust/drainase)
+const PUMP_ID  = "1a6MyHUUephsSkaM1mWUIta5mKmLKZkRKNtctc4xNy1M";  // Pump Maintenance Log
+const MAINT_SEL = "&sheet="+encodeURIComponent("Maintenance Tracker");   // summary tab in MEP Maintenance
+const PUMP_SEL  = "&sheet="+encodeURIComponent("Maintenance Tracker");   // summary tab in Pump workbook
+
+/* One-year schedule tabs that list individual services with dates. Columns are mapped from the
+   header row: item name from the pump/equipment/tool/instrument column, location from the
+   location/area column, date from the scheduled-date column (or the first real date cell).
+   To force a column, add a 0-based dateCol / nameCol / locCol to an entry. */
+// idCol added (0-based, verified against the real sheets) for Water Heater/Exhaust/Drainase/Pump so
+// the Maintenance Checklist's Location + Equipment ID dropdowns can be built directly from this data.
+const SCHEDULE_SHEETS = [
+  {asset:"Calibration",  id:MAINT_ID, sheet:"Calibration 1-Year Schedule"},
+  {asset:"Water Heater", id:MAINT_ID, sheet:"Water Heater 1-Year Schedule", idCol:2, nameCol:1, locCol:4, dateCol:5},
+  {asset:"Exhaust",      id:MAINT_ID, sheet:"Exhaust 1-Year Schedule",      idCol:2, nameCol:1, locCol:4, dateCol:5},
+  {asset:"Drainase",     id:MAINT_ID, sheet:"Drainase 1-Year Schedule",     idCol:2, nameCol:1, locCol:4, dateCol:5},
+  {asset:"Pump",         id:PUMP_ID,  sheet:"Maintenance Log 2026",        idCol:6, nameCol:5, locCol:7, dateCol:0}
+];
+
+/* ============== DATA FETCH (gviz JSONP, CORS-safe) ============== */
+function gvizRaw(id, selector, rich){
+  return new Promise((resolve,reject)=>{
+    const cb = "gvizcb_"+Math.random().toString(36).slice(2);
+    const url = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq`
+      + `?tqx=out:json;responseHandler:${cb}` + (selector||"");
+    const s = document.createElement("script");
+    let done=false;
+    function cleanup(){ try{delete window[cb];}catch(e){} if(s.parentNode) s.remove(); }
+    window[cb] = (resp)=>{
+      done=true;
+      try{
+        const t = resp.table;
+        const grid = (t.rows||[]).map(r => (r.c||[]).map(c => {
+          if(rich) return { v:(c && c.v!=null)?c.v:null, f:(c && c.f!=null)?c.f:null };
+          return (c && c.v!=null) ? c.v : null;
+        }));
+        if(rich){
+          // gviz frequently lifts the sheet's header row into the column labels and drops it
+          // from rows — surface it as a synthetic first row so header detection can see it.
+          const labels=(t.cols||[]).map(c => ({ v:(c && c.label)?c.label:null, f:(c && c.label)?c.label:null }));
+          if(labels.some(c => c.v)) grid.unshift(labels);
+        }
+        cleanup(); resolve(grid);
+      }catch(e){ cleanup(); reject(e); }
+    };
+    s.onerror = ()=>{ if(!done){ cleanup(); reject(new Error("Could not load: "+id)); } };
+    s.src = url;
+    document.body.appendChild(s);
+    setTimeout(()=>{ if(!done){ cleanup(); reject(new Error("Timeout loading: "+id)); } }, 20000);
+  });
+}
+// Backward-compatible helper for the main inventory workbook (fetch by tab name).
+function gviz(sheetName){ return gvizRaw(SPREADSHEET_ID, "&sheet="+encodeURIComponent(sheetName)); }
+// Same, but forces headers=0 so gviz returns EVERY row and never auto-strips top rows as
+// "headers". Needed for the "Pivot Table" tab, whose tall title block otherwise causes gviz
+// to chop off the first rows of the AB:AF lamp table along with it.
+function gvizAll(sheetName){ return gvizRaw(SPREADSHEET_ID, "&sheet="+encodeURIComponent(sheetName)+"&headers=0"); }
+const isNum = v => v!==null && v!=="" && !isNaN(Number(v));
+
+/* ============== PARSERS ============== */
+// Lamp: flat table on "Pivot Table" tab (cols AB:AF) with an explicit Area column per row.
+function parseLamps(grid){
+  const C=LAMP_COLS, out=[];
+  // Collapse non-breaking spaces and runs of whitespace so "17 W", "17  W" and "17\u00a0W"
+  // all count as the same lamp type instead of splitting into separate buckets.
+  const clean=v=>(v==null?"":v).toString().replace(/\u00a0/g," ").replace(/\s+/g," ").trim();
+  for(const row of grid){
+    const area=clean(row[C.area]);
+    if(!area || area.toLowerCase()==="area") continue;   // skip blanks + header row
+    out.push({
+      area,
+      type:      clean(row[C.type])      || "Unknown",
+      lokasi:    clean(row[C.lokasi])    || "Unknown",
+      condition: clean(row[C.condition]) || "Unknown",
+      urgency:   clean(row[C.urgency])   || "Unknown"
+    });
+  }
+  return out;
+}
+// Generic single-table parser with explicit column indices
+function parseGeneric(grid, map){
+  const out=[];
+  for(const row of grid){
+    if(!isNum(row[0])) continue;
+    const rec={};
+    for(const k in map) rec[k]=(row[map[k]]!=null?row[map[k]]:"Unknown").toString().trim()||"Unknown";
+    out.push(rec);
+  }
+  return out;
+}
+/* ---- Maintenance Schedule Log parsers (content-scan, resilient to row/blank-column shifts) ---- */
+const _nm  = s => (s==null?"":s).toString().trim();
+const _num = v => isNum(v) ? Number(v) : 0;
+// MEP Maintenance summary: per-asset annual Target/Done from the monthly-breakdown TOTAL row,
+// plus Total Units / Frequency from the Asset Summary block.
+function parseMaintMain(grid){
+  const out={calibration:{},waterheater:{},exhaust:{},drainase:{}};
+  const sumMap={"calibration":"calibration","water heater":"waterheater","exhaust":"exhaust","drainase":"drainase"};
+  grid.forEach(r=>{
+    const a=_nm(r[0]).toLowerCase();
+    if(sumMap[a]){ const k=sumMap[a]; out[k].units=_num(r[1]); out[k].freq=_nm(r[2]); }
+  });
+  // breakdown TOTAL = last row whose first cell is "TOTAL"
+  let totalRow=null;
+  grid.forEach(r=>{ if(_nm(r[0]).toUpperCase()==="TOTAL") totalRow=r; });
+  if(totalRow){
+    let h=-1;                                   // index of the right-block "TOTAL" marker (col >= 6)
+    for(let i=6;i<totalRow.length;i++){ if(_nm(totalRow[i]).toUpperCase()==="TOTAL"){ h=i; break; } }
+    if(h>=0){
+      out.calibration.target=_num(totalRow[h+1]); out.calibration.done=_num(totalRow[h+2]);
+      out.waterheater.target=_num(totalRow[h+4]); out.waterheater.done=_num(totalRow[h+5]);
+      out.exhaust.target    =_num(totalRow[h+7]); out.exhaust.done    =_num(totalRow[h+8]);
+      out.drainase.target   =_num(totalRow[h+10]);out.drainase.done   =_num(totalRow[h+11]);
+    }
+  }
+  return out;
+}
+// Pump Maintenance summary: Monthly + Bi-Annual streams from the Annual Summary block.
+function parseMaintPump(grid){
+  const out={mo:{target:0,done:0}, bi:{target:0,done:0}};
+  grid.forEach(r=>{
+    const a=_nm(r[0]).toLowerCase();
+    if(a==="monthly inspection"){ out.mo.target=_num(r[1]); out.mo.done=_num(r[2]); }
+    else if(a==="quarterly pm"||a.indexOf("bi annual")>=0||a.indexOf("bi-annual")>=0||a.indexOf("quarterly")>=0){
+      out.bi.target=_num(r[1]); out.bi.done=_num(r[2]);
+    }
+  });
+  return out;
+}
+/* ---- Schedule tabs: dates come from gviz as "Date(y,m,d)" (month 0-indexed). ---- */
+function parseGvizDate(v){
+  if(v==null) return null;
+  if(v instanceof Date) return isNaN(v.getTime())?null:v;
+  const s=v.toString().trim();
+  let m=s.match(/^Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?\)/);
+  if(m) return new Date(+m[1],+m[2],+m[3]);
+  // fallbacks for plain date strings (dd-Mon-yy, yyyy-mm-dd, dd/mm/yyyy)
+  if(/^\d{4}-\d{1,2}-\d{1,2}/.test(s) || /^\d{1,2}[\/-][A-Za-z]{3}[\/-]\d{2,4}/.test(s)){
+    const d=new Date(s); if(!isNaN(d.getTime())) return d;
+  }
+  return null;
+}
+function fmtDate(d){ return d.toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}); }
+const _DONE_RE=/\b(done|complete|completed|selesai|sudah|finished|ok)\b/i;
+const _PEND_RE=/\b(pending|scheduled|belum|due|overdue|not done|open)\b/i;
+// Day-of-week / month / generic calendar words — never valid as an item or location.
+const _CAL_RE=/^(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|sun)$|^(senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu|ahad)$|^(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)$|^(januari|februari|maret|mei|juni|juli|agustus|oktober|desember)$|^(week|bulan|month|hari|day|tahun|year|quarter|q[1-4]|w\d+)$/i;
+const cellStr = cell => (cell && cell.v!=null) ? cell.v.toString().trim() : "";
+// Find the header row and map the date / item-name / location columns by their labels.
+// Item name uses pump/equipment/tool-type headers; location uses the location/area header.
+function detectScheduleCols(rows){
+  let header=null;
+  for(const r of rows){
+    if(!r) continue;
+    if(r.some(c=>parseGvizDate(c&&c.v))) break;          // data rows have begun -> stop
+    const texts=r.map(cellStr);
+    if(texts.filter(Boolean).length>=2) header=texts;    // keep latest header-like row before data
+  }
+  if(!header) return {};
+  const tier=(tiers)=>{ for(const re of tiers){ for(let i=0;i<header.length;i++){ if(re.test(header[i])) return i; } } return null; };
+  return {
+    dateCol: tier([/scheduled|service date|next service|due date/i, /\bdate\b|tanggal|jadwal/i]),
+    nameCol: tier([/pump|equipment|tool|instrument|machine|appliance/i, /\b(asset|unit|tag|model)\b/i, /name|nama/i, /item|description|deskripsi/i]),
+    locCol:  tier([/location|lokasi/i, /\barea\b|tempat|site|zone|ruang/i])
+  };
+}
+// Parse one schedule tab (rich rows of {v,f}) into service records using mapped columns.
+function parseSchedule(rows, label, cfg){
+  cfg=cfg||{};
+  const out=[];
+  rows.forEach(r=>{
+    if(!r||!r.length) return;
+    // service date (mapped column if known, else first real date cell in the row)
+    let dIdx = (cfg.dateCol!=null) ? cfg.dateCol : -1;
+    let dateObj=null, dateStr="";
+    if(dIdx>=0){ dateObj=parseGvizDate(r[dIdx] && r[dIdx].v); dateStr=(r[dIdx] && r[dIdx].f)||(dateObj?fmtDate(dateObj):""); }
+    else { for(let i=0;i<r.length;i++){ const dt=parseGvizDate(r[i] && r[i].v); if(dt){ dIdx=i; dateObj=dt; dateStr=(r[i].f||fmtDate(dt)); break; } } }
+    if(!dateObj) return;                                  // rows without a date aren't scheduled services
+    // status (scan every cell for a done/pending marker)
+    let status="";
+    for(let i=0;i<r.length;i++){ if(i===dIdx) continue; const sv=cellStr(r[i]); if(!sv) continue;
+      if(/^(true|false)$/i.test(sv)){ if(/true/i.test(sv)) status="Done"; continue; }
+      if(_DONE_RE.test(sv)) status=status||"Done";
+      else if(_PEND_RE.test(sv)) status=status||sv;
+    }
+    // item name = pump/equipment/tool column; location = location/area column; equipmentId = its own column
+    let name = (cfg.nameCol!=null) ? cellStr(r[cfg.nameCol]) : "";
+    let location = (cfg.locCol!=null) ? cellStr(r[cfg.locCol]) : "";
+    let equipmentId = (cfg.idCol!=null) ? cellStr(r[cfg.idCol]) : "";
+    if(!name || !location){                               // fill any unmapped field from remaining text cells
+      const texts=[];
+      for(let i=0;i<r.length;i++){
+        if(i===dIdx || i===cfg.nameCol || i===cfg.locCol || i===cfg.idCol) continue;
+        const sv=cellStr(r[i]); if(!sv) continue;
+        if(parseGvizDate(r[i].v)) continue;
+        if(/^(true|false)$/i.test(sv)) continue;
+        if(_DONE_RE.test(sv)||_PEND_RE.test(sv)) continue;
+        if(_CAL_RE.test(sv)) continue;                   // skip weekday / month / calendar words
+        if(/^\d+(\.\d+)?$/.test(sv)) continue;            // skip row numbers / counts
+        texts.push(sv);
+      }
+      if(!name) name=texts.shift()||"";
+      if(!location) location=texts.shift()||"";
+    }
+    out.push({asset:label, name:name||label, location, detail:location, equipmentId, date:dateObj, dateStr, status});
+  });
+  return out;
+}
+function countBy(recs, fn){
+  const m=new Map();
+  recs.forEach(r=>{ const k=fn(r)||"Unknown"; m.set(k,(m.get(k)||0)+1); });
+  return m;
+}
+function crosstab(recs, rowFn, colFn){
+  const cols=new Set(), rows=new Map();
+  recs.forEach(r=>{
+    const rk=rowFn(r)||"Unknown", ck=colFn(r)||"Unknown";
+    cols.add(ck);
+    if(!rows.has(rk)) rows.set(rk,new Map());
+    const mm=rows.get(rk); mm.set(ck,(mm.get(ck)||0)+1);
+  });
+  return {rowKeys:[...rows.keys()], colKeys:[...cols], rows};
+}
+const sortedEntries = m => [...m.entries()].sort((a,b)=>b[1]-a[1]);
+
+/* ============== COLORS ============== */
+const PAL = ["#8BC34A","#123E48","#2e86de","#f39c12","#9b59b6","#16a085","#e74c3c",
+  "#34495e","#1abc9c","#e67e22","#27ae60","#2980b9","#d35400","#7f8c8d","#c0392b","#AEEA00"];
+const URG = {"Aman":"#27ae60","Waspada":"#f39c12","Segera Ganti":"#e74c3c","Ganti":"#c0392b",
+  "ON SCHEDULE":"#27ae60","🟢 ON SCHEDULE":"#27ae60","DUE SOON":"#f39c12","OVERDUE":"#e74c3c",
+  "Active":"#27ae60","Inactive":"#95a5a6"};
+const colorFor=(k,i)=>URG[k]||URG[(k||"").replace(/^[^\w]+/,"").trim()]||PAL[i%PAL.length];
+
+/* ============== STATE ============== */
+let DATA={}, chart=null, currentDef=null, homeCharts=[], mode="home";
+let MAINT={}, maintCharts=[];   // Maintenance Schedule Log data + its progress donuts
+let SCHEDULE=[], ovMslChart=null;   // flattened one-year schedule rows + overview donut handle
+// ONE global Area filter applied to every chart in every category.
+let areaFilter="ALL";
+function norm(s){return (s||"").toString().toUpperCase().replace(/[^A-Z0-9]/g,"").replace(/0+(\d)/g,"$1");}
+function filteredRecs(def){
+  const all=DATA[def.dataKey]||[];
+  if(areaFilter==="ALL") return all;
+  return all.filter(r=>norm(r[def.areaField])===norm(areaFilter));
+}
+
+/* ============== CHART RENDER ============== */
+function draw(cfg){
+  document.getElementById("status").style.display="none";
+  const cv=document.getElementById("chart"); cv.style.display="block";
+  if(chart) chart.destroy();
+  chart=new Chart(cv.getContext("2d"), cfg);
+}
+function setKPIs(items){
+  document.getElementById("kpis").innerHTML =
+    items.map(k=>`<div class="kpi"><div class="v">${k.v}</div><div class="l">${k.l}</div></div>`).join("");
+}
+function baseOpts(extra={}){
+  return Object.assign({responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{position:"bottom",labels:{font:{size:11},boxWidth:12}}}},extra);
+}
+// builders
+function barCount(recs,keyFn,{horizontal=false,color="#8BC34A",label="Count"}={}){
+  const e=sortedEntries(countBy(recs,keyFn));
+  return {type:"bar",data:{labels:e.map(x=>x[0]),
+    datasets:[{label,data:e.map(x=>x[1]),backgroundColor:e.map((x,i)=>colorFor(x[0],i)),borderRadius:4}]},
+    options:baseOpts({indexAxis:horizontal?"y":"x",plugins:{legend:{display:false}}})};
+}
+function doughnut(recs,keyFn){
+  const e=sortedEntries(countBy(recs,keyFn));
+  return {type:"doughnut",data:{labels:e.map(x=>x[0]),
+    datasets:[{data:e.map(x=>x[1]),backgroundColor:e.map((x,i)=>colorFor(x[0],i)),borderWidth:2,borderColor:"#fff"}]},
+    options:baseOpts({cutout:"55%"})};
+}
+function pie(recs,keyFn){
+  const c=doughnut(recs,keyFn); c.type="pie"; delete c.options.cutout; return c;
+}
+function stacked(recs,rowFn,colFn,{pct=false}={}){
+  const ct=crosstab(recs,rowFn,colFn);
+  const datasets=ct.colKeys.map((ck,i)=>({label:ck,backgroundColor:colorFor(ck,i),borderRadius:3,
+    data:ct.rowKeys.map(rk=>{
+      const v=(ct.rows.get(rk).get(ck)||0);
+      if(!pct) return v;
+      const tot=ct.colKeys.reduce((s,c)=>s+(ct.rows.get(rk).get(c)||0),0);
+      return tot? +(v*100/tot).toFixed(1):0;
+    })}));
+  return {type:"bar",data:{labels:ct.rowKeys,datasets},
+    options:baseOpts({scales:{x:{stacked:true},y:{stacked:true,max:pct?100:undefined,
+      ticks:{callback:v=>pct?v+"%":v}}}})};
+}
+
+/* ---- Circular percentage chart: doughnut with the headline % painted in the centre ---- */
+function pctDonut(recs,keyFn){
+  const e=sortedEntries(countBy(recs,keyFn));            // [label,count] sorted desc
+  const total=e.reduce((s,x)=>s+x[1],0);
+  const top=e[0]||["",0];
+  const topPct= total ? Math.round(top[1]*100/total) : 0;
+  return {type:"doughnut",
+    data:{labels:e.map(x=>x[0]),
+      datasets:[{data:e.map(x=>x[1]),
+        backgroundColor:e.map((x,i)=>colorFor(x[0],i)),borderWidth:2,borderColor:"#fff"}]},
+    options:baseOpts({cutout:"70%",
+      plugins:{
+        legend:{position:"bottom",labels:{font:{size:11},boxWidth:12}},
+        tooltip:{callbacks:{label:ctx=>{
+          const v=ctx.parsed, p=total? v*100/total : 0;
+          return " "+ctx.label+": "+v+" ("+p.toFixed(1)+"%)";
+        }}},
+        centerText:{pct:topPct, label:top[0], color:colorFor(top[0],0), total:total}
+      }})
+  };
+}
+/* ---- Progress donut: Completed vs Remaining against a target, % painted in the centre ---- */
+function progressDonut(done,target,name){
+  done=Math.max(0,_num(done)); target=Math.max(0,_num(target));
+  const remaining=Math.max(target-done,0);
+  const pct = target>0 ? Math.round(done*100/target) : 0;
+  const col = pct>=100?"#27ae60" : pct>=50?"#8BC34A" : pct>0?"#f39c12" : "#c0392b";
+  return {type:"doughnut",
+    data:{labels:["Completed","Remaining"],
+      datasets:[{data:[done,remaining],backgroundColor:[col,"#e9edee"],borderWidth:2,borderColor:"#fff"}]},
+    options:baseOpts({cutout:"72%",
+      plugins:{
+        legend:{position:"bottom",labels:{font:{size:11},boxWidth:12}},
+        tooltip:{callbacks:{label:ctx=>" "+ctx.label+": "+ctx.parsed}},
+        valueLabels:false,
+        centerText:{pct:pct, label:name, color:col, total:target}
+      }})
+  };
+}
+/* plugin: paints the big percentage + label inside the doughnut hole */
+const centerTextPlugin={
+  id:"centerText",
+  afterDraw(chart,args,opts){
+    if(!opts || opts.pct==null) return;
+    const meta=chart.getDatasetMeta(0);
+    const arc=meta&&meta.data&&meta.data[0];
+    const ctx=chart.ctx;
+    let cx,cy,r;
+    if(arc){ cx=arc.x; cy=arc.y; r=arc.innerRadius||60; }
+    else{ const a=chart.chartArea; if(!a) return; cx=(a.left+a.right)/2; cy=(a.top+a.bottom)/2; r=60; }
+    const big=Math.max(20,Math.min(46,r*0.6));
+    let lbl=(opts.label||"").toString().replace(/^[^\w]+/,"").trim();
+    if(lbl.length>16) lbl=lbl.slice(0,15)+"…";
+    ctx.save();
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillStyle=opts.color||"#123E48";
+    ctx.font="700 "+big+"px 'Segoe UI',Arial,sans-serif";
+    ctx.fillText(opts.pct+"%", cx, cy-(lbl?big*0.18:0));
+    if(lbl){
+      ctx.fillStyle="#6b7b80";
+      ctx.font="600 "+Math.max(10,Math.round(big*0.32))+"px 'Segoe UI',Arial,sans-serif";
+      ctx.fillText(lbl, cx, cy+big*0.55);
+    }
+    ctx.restore();
+  }
+};
+Chart.register(centerTextPlugin);
+/* plugin: draws the value (count) for every item on every chart
+   - arcs (doughnut / pie / pctDonut): centred on each slice, white w/ dark outline
+   - stacked bars: centred in each segment (zeros skipped)
+   - vertical bars: above the bar;  horizontal bars: to the right of the bar */
+const valueLabelsPlugin={
+  id:"valueLabels",
+  afterDatasetsDraw(chart){
+    const ctx=chart.ctx, opt=chart.options||{};
+    if(opt.plugins && opt.plugins.valueLabels===false) return;   // progress donuts opt out
+    const isHbar = opt.indexAxis==="y";
+    const sc=opt.scales||{};
+    const stacked = !!((sc.x&&sc.x.stacked)||(sc.y&&sc.y.stacked));
+    chart.data.datasets.forEach((ds,di)=>{
+      const meta=chart.getDatasetMeta(di);
+      if(meta.hidden) return;
+      const type=meta.type||chart.config.type;
+      const isArc = type==="doughnut"||type==="pie";
+      meta.data.forEach((el,i)=>{
+        if(!el || el.hidden) return;
+        if(chart.getDataVisibility && chart.getDataVisibility(i)===false) return;
+        const num=Number(ds.data[i]);
+        if(!isFinite(num) || num===0) return;   // skip empty / zero
+        const txt=String(ds.data[i]);
+        let x,y, fill, stroke=null, align="center", base="middle";
+        if(isArc){
+          const p=el.tooltipPosition?el.tooltipPosition():el.getCenterPoint();
+          x=p.x; y=p.y; fill="#fff"; stroke="rgba(0,0,0,.55)";
+        }else if(stacked){
+          const p=el.getCenterPoint(); x=p.x; y=p.y; fill="#fff"; stroke="rgba(0,0,0,.45)";
+        }else if(isHbar){
+          const p=el.getCenterPoint(); x=el.x+6; y=p.y; fill="#1d2b30"; align="left";
+        }else{
+          const p=el.getCenterPoint(); x=p.x; y=el.y-6; fill="#1d2b30"; base="bottom";
+        }
+        ctx.save();
+        ctx.font="700 11px 'Segoe UI',Arial,sans-serif";
+        ctx.textAlign=align; ctx.textBaseline=base;
+        if(stroke){ ctx.lineWidth=3; ctx.lineJoin="round"; ctx.strokeStyle=stroke; ctx.strokeText(txt,x,y); }
+        ctx.fillStyle=fill; ctx.fillText(txt,x,y);
+        ctx.restore();
+      });
+    });
+  }
+};
+Chart.register(valueLabelsPlugin);
+/* ============== CHART DEFINITIONS (20 buttons) ============== */
+// Each category has its own slicer dimension: lamps slice by Area, the rest by Location.
+// Every build() receives R = the category's records already filtered by the active slicer.
+const CATS=[
+  {name:"LAMPS",dataKey:"lamp",areaField:"area",areaLabel:"Area",buttons:[
+    {id:"C1",label:"Urgency by Area",title:"Lamp Urgency Composition (%)",
+      build:(R)=>pctDonut(R,r=>r.urgency)},
+    {id:"C2",label:"Area x Condition",title:"Lamp Area vs Condition",
+      build:(R)=>stacked(R,r=>r.area,r=>r.condition)},
+    {id:"C3",label:"By Lamp Type",title:"Lamp Count by Type",
+      build:(R)=>barCount(R,r=>r.type,{horizontal:true})},
+    {id:"C4",label:"Count by Area",title:"Lamp Count by Area",
+      build:(R)=>barCount(R,r=>r.area)}
+  ]},
+  {name:"EQUIPMENT / CALIBRATION",dataKey:"calibration",areaField:"location",areaLabel:"Location",buttons:[
+    {id:"C5",label:"Calib. Status",title:"Calibration Status Breakdown",
+      build:(R)=>pctDonut(R,r=>r.calStatus)},
+    {id:"C6",label:"Category x Status",title:"Calibration Category vs Status",
+      build:(R)=>stacked(R,r=>r.category,r=>r.status)},
+    {id:"C7",label:"By Location",title:"Calibration Equipment by Location",
+      build:(R)=>barCount(R,r=>r.location)},
+    {id:"C8",label:"By Manufacturer",title:"Calibration Equipment by Manufacturer / Model",
+      build:(R)=>doughnut(R,r=>r.manuf)}
+  ]},
+  {name:"PUMPS",dataKey:"pump",areaField:"location",areaLabel:"Location",buttons:[
+    {id:"C9",label:"Category x Urgency",title:"Pump Category vs Urgency",
+      build:(R)=>stacked(R,r=>r.category,r=>r.urgency)},
+    {id:"C10",label:"By Urgency",title:"Pump Maintenance Urgency",
+      build:(R)=>pctDonut(R,r=>r.urgency)},
+    {id:"C11",label:"By Location",title:"Pumps by Location",
+      build:(R)=>barCount(R,r=>r.location)},
+    {id:"C12",label:"By Manufacturer",title:"Pumps by Manufacturer / Model",
+      build:(R)=>doughnut(R,r=>r.manuf)}
+  ]},
+  {name:"WATER HEATERS",dataKey:"waterheater",areaField:"location",areaLabel:"Location",buttons:[
+    {id:"C13",label:"By Location",title:"Water Heaters by Location",
+      build:(R)=>barCount(R,r=>r.location)},
+    {id:"C14",label:"By Model",title:"Water Heaters by Manufacturer / Model",
+      build:(R)=>doughnut(R,r=>r.manuf)},
+    {id:"C15",label:"By Urgency",title:"Water Heater Maintenance Urgency",
+      build:(R)=>pctDonut(R,r=>r.urgency)},
+    {id:"C16",label:"By Status",title:"Water Heater Equipment Status",
+      build:(R)=>pctDonut(R,r=>r.status)}
+  ]},
+  {name:"EXHAUST",dataKey:"exhaust",areaField:"location",areaLabel:"Location",buttons:[
+    {id:"C17",label:"By Location",title:"Exhaust Units by Location",
+      build:(R)=>barCount(R,r=>r.location)},
+    {id:"C18",label:"By Equipment",title:"Exhaust by Equipment Name",
+      build:(R)=>barCount(R,r=>r.name,{horizontal:true})},
+    {id:"C19",label:"By Manufacturer",title:"Exhaust by Manufacturer / Model",
+      build:(R)=>doughnut(R,r=>r.manuf)},
+    {id:"C20",label:"By Urgency",title:"Exhaust Maintenance Urgency",
+      build:(R)=>pctDonut(R,r=>r.urgency)}
+  ]}
+];
+// Maintenance Schedule Log lives in its own top-level module (see MODULES), so its choices
+// are defined separately rather than as a category of the inventory module.
+const MAINT_BUTTONS=[
+  {id:"M1",label:"Pump Maintenance",title:"Pump Maintenance \u2014 Schedule Progress",asset:"pump"},
+  {id:"M2",label:"Calibration",     title:"Calibration \u2014 Schedule Progress",     asset:"calibration", freqFallback:"Annually"},
+  {id:"M3",label:"Exhaust",         title:"Exhaust \u2014 Schedule Progress",         asset:"exhaust",     freqFallback:"Monthly"},
+  {id:"M4",label:"Water Heater",    title:"Water Heater \u2014 Schedule Progress",    asset:"waterheater", freqFallback:"Annually"},
+  {id:"M5",label:"Drainase",        title:"Drainase \u2014 Schedule Progress",        asset:"drainase",    freqFallback:"Bi-annually"}
+];
+const ALLDEFS={};
+CATS.forEach((c,ci)=>c.buttons.forEach(b=>{ b.dataKey=c.dataKey; b.areaField=c.areaField; b.areaLabel=c.areaLabel; b.catIndex=ci; ALLDEFS[b.id]=b; }));
+
+/* ---- Modules: top-level sections. A module holds either `cats` (accordion of categories)
+       or `buttons` (direct choices). Add objects here to grow the site. ---- */
+const MODULES=[
+  {id:"apm", name:"Asset Preventive Maintenance", icon:"\uD83D\uDD27", cats:[0,1,2,3,4]},
+  {id:"msl", name:"Maintenance Schedule Log",      icon:"\uD83D\uDDD3\uFE0F", buttons:MAINT_BUTTONS}
+];
+const CAT2MOD={};
+MODULES.forEach((m,mi)=>{
+  (m.cats||[]).forEach(ci=>{ CAT2MOD[ci]=mi; });
+  (m.buttons||[]).forEach(b=>{ b.maint=true; b.modIndex=mi; ALLDEFS[b.id]=b; });
+});
+
+/* ---- Alerts: flag assets sitting in urgent maintenance states across every family ---- */
+const ALERT_SPECS=[
+  {key:"lamp",        label:"Lamp",         field:"urgency",   item:r=>r.type,     loc:r=>(r.lokasi&&r.lokasi!=="Unknown")?r.lokasi:r.area},
+  {key:"calibration", label:"Calibration",  field:"calStatus", item:r=>r.category, loc:r=>r.location},
+  {key:"pump",        label:"Pump",         field:"urgency",   item:r=>r.category, loc:r=>r.location},
+  {key:"waterheater", label:"Water Heater", field:"urgency",   item:r=>r.name,     loc:r=>r.location},
+  {key:"exhaust",     label:"Exhaust",      field:"urgency",   item:r=>r.name,     loc:r=>r.location}
+];
+const CRIT_SET=new Set(["SEGERAGANTI","GANTI","OVERDUE"]);   // immediate action
+const WARN_SET=new Set(["WASPADA","DUESOON"]);               // watch list
+function tierOf(v){ const n=norm(v); if(CRIT_SET.has(n)) return "critical"; if(WARN_SET.has(n)) return "warning"; return "ok"; }
+// 1 July 2026 \u2014 maintenance schedule items before this are ignored for overdue detection,
+// since that's when this program started tracking completion.
+const SCHEDULE_PROGRAM_START=new Date(2026,6,1);
+// Items whose due date is more than 1 day in the past and still not marked done are
+// surfaced as critical alerts \u2014 computed live from SCHEDULE (already loaded), so this
+// doesn't depend on the Apps Script's optional daily "mark overdue" sweep having run.
+function collectOverdueScheduleAlerts(){
+  const out=[];
+  const today=new Date(); today.setHours(0,0,0,0);
+  const cutoff=new Date(today.getTime()-86400000);
+  (SCHEDULE||[]).forEach(s=>{
+    const d=new Date(s.date); d.setHours(0,0,0,0);
+    if(d < SCHEDULE_PROGRAM_START) return;
+    if(d >= cutoff) return;
+    if(_DONE_RE.test(s.status||"")) return;
+    out.push({asset:s.asset, item:(s.name||"\u2014"), location:(s.location||"\u2014"), status:"OVERDUE", tier:"critical"});
+  });
+  return out;
+}
+function collectAlerts(){
+  const out=[];
+  ALERT_SPECS.forEach(sp=>{
+    (DATA[sp.key]||[]).forEach(r=>{
+      const val=(r[sp.field]||"").toString().trim();
+      const t=tierOf(val); if(t==="ok") return;
+      out.push({asset:sp.label, item:(sp.item(r)||"\u2014"), location:(sp.loc(r)||"\u2014"), status:val, tier:t});
+    });
+  });
+  out.push(...collectOverdueScheduleAlerts());
+  out.sort((a,b)=> a.tier!==b.tier ? (a.tier==="critical"?-1:1) : a.asset.localeCompare(b.asset));
+  return out;
+}
+function alertCounts(){
+  const a=collectAlerts();
+  return {critical:a.filter(x=>x.tier==="critical").length,
+          warning: a.filter(x=>x.tier==="warning").length,
+          total:a.length, list:a};
+}
+let alertFilter="all";
+function updateBadges(){
+  const {critical,warning,total}=alertCounts();
+  const onlyWarn = critical===0;
+  [["hdrBadge"],["navBadge"]].forEach(([id])=>{
+    const el=document.getElementById(id); if(!el) return;
+    if(total>0){ el.style.display=""; el.textContent=total; el.classList.toggle("warn",onlyWarn); }
+    else el.style.display="none";
+  });
+}
+
+/* ============== INTERACTION ============== */
+/* ============== HOME / OVERVIEW ============== */
+function setView(m){
+  mode=m;
+  document.getElementById("homeView").style.display   = (m==="home")?"":"none";
+  document.getElementById("chartView").style.display  = (m==="chart")?"":"none";
+  document.getElementById("alertsView").style.display = (m==="alerts")?"":"none";
+  document.getElementById("maintView").style.display  = (m==="maint")?"":"none";
+  document.getElementById("mclView").style.display    = (m==="mcl")?"":"none";
+  const hb=document.getElementById("homeBtn");  if(hb) hb.classList.toggle("active", m==="home");
+  const ab=document.getElementById("alertBtn"); if(ab) ab.classList.toggle("active", m==="alerts");
+  const mb=document.getElementById("mclBtn");   if(mb) mb.classList.toggle("active", m==="mcl");
+}
+function showHome(){
+  currentDef=null;
+  expandedCat=-1; applyExpanded();
+  document.querySelectorAll(".navbtn").forEach(b=>b.classList.remove("active"));
+  document.getElementById("contentTitle").textContent="Overview";
+  document.getElementById("filterPanel").style.display="none";   // overview spans all areas
+  setView("home");
+  renderHome();
+}
+function renderHome(){
+  // urgent-items banner across all asset families
+  const {critical,warning,total}=alertCounts();
+  const ban=document.getElementById("alertBanner");
+  if(total>0){
+    const crit=critical>0;
+    ban.className="alert-banner "+(crit?"crit":"warn");
+    ban.style.display="";
+    let msg = crit ? `${critical} asset${critical>1?"s":""} need immediate attention`
+                   : `${warning} asset${warning>1?"s":""} on the watch list`;
+    if(crit && warning>0) msg += ` &middot; ${warning} more to watch`;
+    ban.innerHTML=`<span class="big">${crit?"\uD83D\uDD34":"\uD83D\uDFE0"}</span><span>${msg}</span><span class="go">View alerts \u2192</span>`;
+    ban.onclick=showAlerts;
+  } else { ban.style.display="none"; }
+  const specs=[
+    {cv:"hc_lamp", data:DATA.lamp,        key:r=>r.urgency},
+    {cv:"hc_cal",  data:DATA.calibration, key:r=>r.calStatus},
+    {cv:"hc_pump", data:DATA.pump,        key:r=>r.urgency},
+    {cv:"hc_wh",   data:DATA.waterheater, key:r=>r.urgency},
+    {cv:"hc_ex",   data:DATA.exhaust,     key:r=>r.urgency}
+  ];
+  homeCharts.forEach(ch=>{ if(ch) ch.destroy(); }); homeCharts=[];
+  specs.forEach(s=>{
+    const el=document.getElementById(s.cv); if(!el) return;
+    try{ homeCharts.push(new Chart(el.getContext("2d"), pctDonut(s.data||[], s.key))); }catch(e){}
+  });
+  document.getElementById("homeKpis").innerHTML=[
+    {l:"Lamps",v:(DATA.lamp||[]).length},
+    {l:"Calibration",v:(DATA.calibration||[]).length},
+    {l:"Pumps",v:(DATA.pump||[]).length},
+    {l:"Water Heaters",v:(DATA.waterheater||[]).length},
+    {l:"Exhaust",v:(DATA.exhaust||[]).length}
+  ].map(k=>`<div class="kpi"><div class="v">${k.v}</div><div class="l">${k.l}</div></div>`).join("");
+  renderMaintOverview();
+}
+// Combined completion across every Maintenance Schedule Log stream.
+function maintOverall(){
+  const m=MAINT||{}; const parts=[];
+  if(m.pump){ parts.push([m.pump.mo.done,m.pump.mo.target]); parts.push([m.pump.bi.done,m.pump.bi.target]); }
+  ["calibration","waterheater","exhaust","drainase"].forEach(k=>{ if(m[k]) parts.push([m[k].done,m[k].target]); });
+  const done=parts.reduce((s,p)=>s+_num(p[0]),0), target=parts.reduce((s,p)=>s+_num(p[1]),0);
+  return {done,target,pct: target>0?Math.round(done*100/target):0};
+}
+// Nearest upcoming service + everything scheduled for today, from the one-year schedule tabs.
+function schedStats(){
+  const today=new Date(); today.setHours(0,0,0,0); const todayT=today.getTime();
+  let nearestT=null; const due=[];
+  (SCHEDULE||[]).forEach(s=>{
+    const d=new Date(s.date); d.setHours(0,0,0,0); const dt=d.getTime();
+    const isDone=_DONE_RE.test(s.status||"");
+    if(dt===todayT && !isDone) due.push(s);
+    if(dt>=todayT && !isDone && (nearestT===null || dt<nearestT)) nearestT=dt;
+  });
+  let nearest=null, nearestList=[];
+  if(nearestT!==null){
+    (SCHEDULE||[]).forEach(s=>{
+      const d=new Date(s.date); d.setHours(0,0,0,0);
+      if(d.getTime()===nearestT && !_DONE_RE.test(s.status||"")) nearestList.push(s);
+    });
+    nearest={...nearestList[0], _t:nearestT, _d:new Date(nearestT)};
+  }
+  return {nearest, nearestList, due, today};
+}
+function renderMaintOverview(){
+  // overall progress donut
+  const ov=maintOverall();
+  if(ovMslChart){ ovMslChart.destroy(); ovMslChart=null; }
+  const el=document.getElementById("ov_msl");
+  if(el){ try{ ovMslChart=new Chart(el.getContext("2d"), progressDonut(ov.done, ov.target, "Overall")); }catch(e){} }
+  // nearest service
+  const {nearest, nearestList, due, today}=schedStats();
+  const nx=document.getElementById("ovNearest");
+  if(nx){
+    const esc=s=>(s||"").toString().replace(/&/g,"&amp;").replace(/</g,"&lt;");
+    if(nearest){
+      const days=Math.round((nearest._d - today)/86400000);
+      const when = days===0?"Today" : days===1?"Tomorrow" : "in "+days+" days";
+      const rows=nearestList.map((s,i)=>`<tr>`+
+        `<td class="num">${i+1}</td>`+
+        `<td>${esc(s.name||s.asset)}</td>`+
+        `<td>${esc(s.location||"\u2014")}</td></tr>`).join("");
+      nx.innerHTML=`<div class="mini-h">Nearest Service Date</div>`+
+        `<div class="next-date">${esc(nearest.dateStr||fmtDate(nearest._d))}</div>`+
+        `<span class="next-when">${when}</span>`+
+        `<table class="next-table"><thead><tr><th>No.</th><th>Item</th><th>Location</th></tr></thead>`+
+        `<tbody>${rows}</tbody></table>`;
+    } else {
+      nx.innerHTML=`<div class="mini-h">Nearest Service Date</div>`+
+        `<div class="next-sub" style="margin-top:10px;">No upcoming services found in the schedule sheets.</div>`;
+    }
+  }
+  // due today table
+  const dt=document.getElementById("ovDueToday");
+  const head=document.getElementById("ovDueHead");
+  if(head) head.textContent="Maintenance Due Today \u2014 "+fmtDate(today);
+  if(dt){
+    if(due.length===0){
+      dt.innerHTML=`<div class="due-none"><span class="num">0</span><span class="txt">Maintenance Due Today</span></div>`;
+    } else {
+      const esc=s=>(s||"").toString().replace(/&/g,"&amp;").replace(/</g,"&lt;");
+      dt.innerHTML=`<table class="due-table"><thead><tr>`+
+        `<th>Asset</th><th>Item</th><th>Status</th></tr></thead><tbody>`+
+        due.map(s=>`<tr><td><span class="asset-tag">${esc(s.asset)}</span></td>`+
+          `<td>${esc(s.name)}${s.detail?` <span style="color:var(--muted)">\u00b7 ${esc(s.detail)}</span>`:""}</td>`+
+          `<td>${esc(s.status||"Scheduled")}</td></tr>`).join("")+
+        `</tbody></table>`;
+    }
+  }
+}
+
+/* ---- ALERTS VIEW ---- */
+function showAlerts(){
+  currentDef=null;
+  document.querySelectorAll(".navbtn").forEach(b=>b.classList.remove("active"));
+  document.getElementById("contentTitle").textContent="Alerts \u2014 Urgent Maintenance";
+  document.getElementById("filterPanel").style.display="none";   // alerts span all areas
+  setView("alerts");
+  renderAlerts();
+}
+function renderAlerts(){
+  const {critical,warning,total,list}=alertCounts();
+  document.getElementById("alertKpis").innerHTML=[
+    {v:critical,l:"Critical"},{v:warning,l:"Watch List"},{v:total,l:"Total Flagged"}
+  ].map(k=>`<div class="kpi"><div class="v">${k.v}</div><div class="l">${k.l}</div></div>`).join("");
+  const filters=[
+    {id:"all",label:"All ("+total+")"},
+    {id:"critical",label:"Critical ("+critical+")"},
+    {id:"warning",label:"Watch list ("+warning+")"}
+  ];
+  const ff=document.getElementById("alertFilters");
+  ff.innerHTML=filters.map(f=>`<button class="af${f.id===alertFilter?" active":""}" data-af="${f.id}">${f.label}</button>`).join("");
+  ff.querySelectorAll(".af").forEach(b=>b.onclick=()=>{ alertFilter=b.dataset.af; renderAlerts(); });
+  const rows=list.filter(x=>alertFilter==="all"||x.tier===alertFilter);
+  const wrap=document.getElementById("alertTableWrap");
+  if(rows.length===0){
+    wrap.innerHTML=`<div class="all-clear"><span class="ic">\u2705</span>`+
+      (total===0 ? "All assets are in a safe state. Nothing needs attention right now."
+                 : "Nothing matches this filter.")+`</div>`;
+    return;
+  }
+  const esc=s=>(s||"").toString().replace(/&/g,"&amp;").replace(/</g,"&lt;");
+  wrap.innerHTML=`<table class="atable"><thead><tr>`+
+    `<th>Asset</th><th>Item</th><th>Location</th><th>Status</th></tr></thead><tbody>`+
+    rows.map(r=>`<tr>`+
+      `<td><span class="asset-tag">${esc(r.asset)}</span></td>`+
+      `<td>${esc(r.item)}</td>`+
+      `<td>${esc(r.location)}</td>`+
+      `<td><span class="chip ${r.tier}">${esc(r.status)}</span></td>`+
+    `</tr>`).join("")+`</tbody></table>`;
+}
+
+function selectChart(id){
+  const def=ALLDEFS[id]; if(!def) return;
+  if(def.maint){ showMaintenance(def); return; }   // Maintenance Schedule Log -> progress view
+  setView("chart");
+  currentDef=def;
+  expandedMod=CAT2MOD[def.catIndex];   // open the module that owns this chart
+  expandedCat=def.catIndex;            // keep the parent category of the selected chart open
+  applyExpanded();
+  document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.id===id));
+  document.getElementById("contentTitle").innerHTML=def.title;
+  buildAreaFilter();          // contextual Area filter (hidden when chart has no area data)
+  renderCurrent();
+}
+
+/* ---- MAINTENANCE SCHEDULE LOG VIEW (target vs progress, % template) ---- */
+function pctStr(done,target){ done=_num(done); target=_num(target); return (target>0?Math.round(done*100/target):0)+"%"; }
+function showMaintenance(def){
+  currentDef=def;
+  expandedMod=def.modIndex; expandedCat=-1; applyExpanded();   // module-level choice, no category tier
+  document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.id===def.id));
+  document.getElementById("contentTitle").innerHTML=def.title;
+  document.getElementById("filterPanel").style.display="none";   // schedule progress spans all areas
+  setView("maint");
+  renderMaint(def);
+}
+function renderMaint(def){
+  maintCharts.forEach(c=>{ if(c) c.destroy(); }); maintCharts=[];
+  const a=def.asset;
+  let cards=[], kpis=[];
+  if(a==="pump"){
+    const p=MAINT.pump||{mo:{target:0,done:0},bi:{target:0,done:0}};
+    // Each pump stream carries its own frequency, exactly as represented on the tracker.
+    cards=[
+      {name:"Monthly Inspection", freq:"Monthly",   done:p.mo.done, target:p.mo.target},
+      {name:"Bi-Annual PM",        freq:"Bi-Annual", done:p.bi.done, target:p.bi.target}
+    ];
+    const td=_num(p.mo.done)+_num(p.bi.done), tt=_num(p.mo.target)+_num(p.bi.target);
+    kpis=[
+      {l:"Monthly Target",v:_num(p.mo.target)},
+      {l:"Bi-Annual Target",v:_num(p.bi.target)},
+      {l:"Completed",v:td},
+      {l:"Overall Progress",v:pctStr(td,tt)}
+    ];
+  } else {
+    const m=MAINT[a]||{};
+    const freq=(m.freq && m.freq.trim()) ? m.freq : (def.freqFallback||"\u2014");   // live from sheet
+    cards=[{name:def.label, freq:freq, done:m.done, target:m.target}];
+    kpis=[
+      {l:"Total Units",v:(m.units!=null?m.units:"\u2014")},
+      {l:"Frequency",v:freq},
+      {l:"Annual Target",v:_num(m.target)},
+      {l:"Completed",v:_num(m.done)},
+      {l:"Progress",v:pctStr(m.done,m.target)}
+    ];
+  }
+  document.getElementById("maintKpis").innerHTML=
+    kpis.map(k=>`<div class="kpi"><div class="v">${k.v}</div><div class="l">${k.l}</div></div>`).join("");
+  const grid=document.getElementById("maintGrid");
+  grid.innerHTML=cards.map((c,i)=>
+    `<div class="mini-card"><div class="mini-h">${c.name}</div>`+
+    `<div class="maint-meta"><span class="freq-pill">${c.freq||"\u2014"}</span><span>Target: ${_num(c.target)}</span></div>`+
+    `<div class="mini-wrap"><canvas id="mc_${i}"></canvas></div></div>`).join("");
+  cards.forEach((c,i)=>{
+    const el=document.getElementById("mc_"+i); if(!el) return;
+    try{ maintCharts.push(new Chart(el.getContext("2d"), progressDonut(c.done,c.target,c.name))); }catch(e){}
+  });
+}
+function renderCurrent(){
+  if(!currentDef) return;
+  try{
+    const recs=filteredRecs(currentDef);
+    draw(currentDef.build(recs));
+    setKPIs([
+      {v:recs.length,l:"Records Shown"},
+      {v:(areaFilter==="ALL"?"All Areas":areaFilter),l:"Active Area Filter"}
+    ]);
+  }catch(e){
+    document.getElementById("chart").style.display="none";
+    const st=document.getElementById("status");
+    st.style.display="block"; st.className="status err"; st.textContent="Render error: "+e.message;
+  }
+}
+
+/* ============== MAINTENANCE CHECKLIST MODULE ============== */
+/* Self-contained: Templates (uploaded as .docx, kept as the full formatted document) -> New Checklist
+   (an editable copy of that document you type directly into) -> History (submitted checklists).
+   Equipment names are free-typed but suggested from the Maintenance Schedule Log's own SCHEDULE data,
+   so no separate equipment list has to be maintained here.
+   Backed by Firebase (Firestore for records, Storage for photos) \u2014 see the config block near the top
+   of this file \u2014 so every device sees the same templates, checklists, and photos. */
+let mclTab="templates", mclSubmissions=[], mclTemplates=[], mclDraft=null, mclHistFilter={equipment:"",status:""}, mclLoading=false, mclLoadError=null;
+
+// ---- Fixed hazard checklists (Pump / Exhaust / Water Heater / Drainase) ----
+// Each submission is matched against its schedule sheet by Equipment ID + Due Date, then
+// synced server-side (green fill + tracker + Last Maintenance) by the Apps Script.
+const MCL_SAFETY_ITEMS=[
+  "Berdoa sebelum dan sesudah bekerja",
+  "Pastikan anda dalam kondisi sehat sebelum bekerja",
+  "Pastikan area kerja bersih sebelum memulai pekerjaan",
+  "Pahami pekerjaan dengan baik",
+  "Pahami bahaya dan resiko yang muncul pada setiap tahapan pekerjaan",
+  "Cegah atau kelola dengan baik semua potensi bahaya agar tidak terjadi kecelakaan",
+  "Periksa sarana dan prasarana kerja pastikan dalam kondisi layak dan aman",
+  "Pakailah alat pelindung diri yang telah ditentukan selama proses pekerjaan",
+  "Hentikan pekerjaan apabila terjadi ketidaksesuaian dengan metode kerja yang ada, segera hubungi pengawas",
+  "Lakukan housekeeping area kerja setelah selesai bekerja",
+  "Capailah hasil kerja yang ditetapkan dengan aman",
+  "Jika diperlukan Pemadaman, Pastikan prosedur pengisolasian energi berbahaya sudah dijalankan"
+];
+const MCL_HAZARD_TYPES={
+  pump:{label:"Pump Maintenance Checklist",title:"Checklist Maintenance Pompa",hazards:[
+    "Bekerja di ketinggian","Bidang panas","Ruang terbatas","Sumber pengapian","Kebisingan tinggi",
+    "Benda berputar","Tegangan tinggi","Temperatur tinggi","Tekanan tinggi","Tertabrak kendaraan",
+    "Area berdebu","Area Licin"]},
+  exhaust:{label:"Exhaust Maintenance",title:"Checklist Maintenance Exhaust Fan",hazards:[
+    "Bekerja di ketinggian","Sengatan listrik","Ruang terbatas","Korsleting listrik","Kebisingan tinggi",
+    "Benda berputar","Tegangan tinggi","Permukaan tajam (blade)","Debu beterbangan","Terjepit / tergores",
+    "Area berdebu","Area Licin"]},
+  waterheater:{label:"Water Heater Maintenance",title:"Checklist Maintenance Water Heater",hazards:[
+    "Bekerja di ketinggian","Bidang panas","Ruang terbatas","Sengatan listrik","Korsleting listrik",
+    "Air panas / luka bakar","Tegangan tinggi","Temperatur tinggi","Tekanan tinggi","Permukaan tajam",
+    "Area berdebu","Area Licin"]},
+  drainase:{label:"Drainase Maintenance",title:"Checklist Maintenance Drainase Lantai Kamar Mandi & Wastafel",hazards:[
+    "Ruang terbatas / sirkulasi udara kurang","Bau / gas dari saluran (sewer gas)","Bakteri & kuman dari air kotor",
+    "Cipratan air kotor","Bahan kimia pembersih","Permukaan tajam","Area licin","Area berdebu / kotor",
+    "Sengatan listrik (peralatan basah)","Posisi kerja membungkuk / jongkok"]}
+};
+let mclMaintLogs=[];
+let mclNewStage="info"; // "New Checklist" wizard: "info" (pick type -> equipment/template/technician/date) -> "review" (checklist items + submit)
+let mclPickedType=null; // which of the 4 quick-pick buttons was clicked on the "info" stage; gates showing the fields below
+const MCL_TYPE_TEMPLATE_KEYWORDS={ pump:["pompa","pump"], exhaust:["exhaust"], waterheater:["water heater","water-heater","waterheater"], drainase:["drainase","drainage","drain"] };
+// Maps a checklist type to its SCHEDULE asset label, so the Location + Equipment ID dropdowns can
+// be built straight from the same schedule data already loaded for the Maintenance Schedule Log.
+const MCL_TYPE_ASSET_LABEL={ pump:"Pump", exhaust:"Exhaust", waterheater:"Water Heater", drainase:"Drainase" };
+function mclLocationsForType(type){
+  const label=MCL_TYPE_ASSET_LABEL[type];
+  const set=new Set();
+  (SCHEDULE||[]).forEach(s=>{ if(s.asset===label && s.location) set.add(s.location); });
+  return [...set].sort((a,b)=>a.localeCompare(b));
+}
+function mclEquipmentIdsForTypeLocation(type,location){
+  const label=MCL_TYPE_ASSET_LABEL[type];
+  const set=new Set();
+  (SCHEDULE||[]).forEach(s=>{ if(s.asset===label && s.location===location && s.equipmentId) set.add(s.equipmentId); });
+  return [...set].sort((a,b)=>a.localeCompare(b));
+}
+// Local-timezone-safe "YYYY-MM-DD" (toISOString() would shift the date near midnight in timezones
+// behind UTC, which would silently mismatch the Apps Script's Equipment ID + Due Date lookup).
+function mclLocalIso(dt){
+  const y=dt.getFullYear(), m=String(dt.getMonth()+1).padStart(2,"0"), day=String(dt.getDate()).padStart(2,"0");
+  return y+"-"+m+"-"+day;
+}
+// Every scheduled date on file for one specific piece of equipment, from the same SCHEDULE data
+// already loaded for the Maintenance Schedule Log — each option shows its current status too.
+function mclDueDatesForEquipment(type,equipmentId){
+  const label=MCL_TYPE_ASSET_LABEL[type];
+  const map=new Map();
+  (SCHEDULE||[]).forEach(s=>{
+    if(s.asset!==label || s.equipmentId!==equipmentId || !s.date) return;
+    const iso=mclLocalIso(s.date);
+    if(!map.has(iso)) map.set(iso, { value:iso, sortDate:s.date, label:(s.dateStr||fmtDate(s.date))+(s.status?(" — "+s.status):"") });
+  });
+  return [...map.values()].sort((a,b)=>a.sortDate-b.sortDate);
+}
+
+// POST as text/plain (not application/json) so the browser treats it as a "simple request" and
+// skips the CORS preflight OPTIONS call, which Apps Script Web Apps don't handle.
+async function mclApiPost(action, payload){
+  const res=await fetch(window.MCL_SHEETS_WEBAPP_URL, {
+    method:"POST",
+    headers:{"Content-Type":"text/plain;charset=utf-8"},
+    body:JSON.stringify(Object.assign({action}, payload))
+  });
+  let data;
+  try{
+    data=await res.json();
+  }catch(e){
+    throw new Error("The Sheet backend didn't return valid data (often caused by the Apps Script deployment access being restricted). Check that the Web app deployment access is set to \"Anyone\".");
+  }
+  if(data.error) throw new Error(data.error);
+  return data;
+}
+async function mclApiGet(action){
+  const url=window.MCL_SHEETS_WEBAPP_URL+"?action="+encodeURIComponent(action)+"&_ts="+Date.now();
+  const res=await fetch(url, {cache:"no-store"});
+  let data;
+  try{
+    data=await res.json();
+  }catch(e){
+    throw new Error("The Sheet backend didn't return valid data (got an unexpected response, often caused by the Apps Script deployment access being restricted). Check that the Web app deployment access is set to \"Anyone\", not your organization only.");
+  }
+  if(data.error) throw new Error(data.error);
+  return data;
+}
+
+async function mclLoad(){
+  if(!window.MCL_SHEETS_CONFIGURED){ mclTemplates=[]; mclSubmissions=[]; mclMaintLogs=[]; return; }
+  mclLoadError=null;
+  try{
+    const data=await mclApiGet("list");
+    mclTemplates=(data.templates||[]).map(t=>Object.assign({}, t, {
+      items: Array.isArray(t.items) ? t.items : []
+    }));
+    mclSubmissions=(data.submissions||[]).map(s=>Object.assign({}, s, {
+      items: Array.isArray(s.items) ? s.items : [],
+      photos: Array.isArray(s.photos) ? s.photos : []
+    })).sort((a,b)=>new Date(b.date)-new Date(a.date));
+    mclMaintLogs=(data.maintenanceLogs||[]).map(l=>Object.assign({}, l, {
+      safetyChecked: Array.isArray(l.safetyChecked) ? l.safetyChecked : [],
+      hazardChecked: Array.isArray(l.hazardChecked) ? l.hazardChecked : [],
+      photos: Array.isArray(l.photos) ? l.photos : []
+    })).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+  }catch(e){
+    mclLoadError=e.message;
+    mclTemplates=[]; mclSubmissions=[]; mclMaintLogs=[];
+  }
+}
+async function mclCreateTemplate(tpl){
+  await mclApiPost("createTemplate", {template:tpl});
+}
+async function mclDeleteTemplateRemote(id){
+  await mclApiPost("deleteTemplate", {id});
+}
+// Submits the checklist record plus any photos (as base64) in one call; the Apps Script side
+// saves each photo to a Drive folder and returns their public view URLs.
+async function mclCreateSubmission(sub, photoBlobs){
+  const photos=await Promise.all((photoBlobs||[]).map(async(blob,i)=>({
+    name:`${i}.jpg`, dataBase64:await mclBlobToBase64(blob)
+  })));
+  const result=await mclApiPost("createSubmission", {submission:sub, photos});
+  return Array.isArray(result.photos) ? result.photos : [];
+}
+async function mclDeleteSubmissionRemote(id){
+  await mclApiPost("deleteSubmission", {id});
+}
+function mclBlobToBase64(blob){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(reader.result.split(",")[1]);
+    reader.onerror=()=>reject(new Error("Could not encode photo"));
+    reader.readAsDataURL(blob);
+  });
+}
+function mclUid(p){ return p+"_"+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function mclEsc(s){ return (s===undefined||s===null)?"":String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function mclFmtDate(iso){ try{ const d=new Date(iso); return d.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"}); }catch(e){ return iso; } }
+function mclToast(msg){ const el=document.createElement("div"); el.className="mcl-toast"; el.textContent=msg; document.body.appendChild(el); setTimeout(()=>el.remove(),2400); }
+// Native confirm() is blocked/silently no-ops in many sandboxed preview contexts, so use a real modal instead.
+function mclConfirmModal(message, onYes){
+  const bg=document.createElement("div"); bg.className="mcl-modal-bg";
+  bg.innerHTML=`<div class="mcl-modal" style="max-width:380px;"><div style="font-size:14px;font-weight:600;color:var(--title);margin-bottom:16px;">${mclEsc(message)}</div>`+
+    `<div style="display:flex;gap:10px;justify-content:flex-end;">`+
+    `<button class="fbtn" style="width:auto;margin:0;" id="mclConfirmNo">Cancel</button>`+
+    `<button class="refresh" style="color:#fff;background:#c0392b;" id="mclConfirmYes">Delete</button></div></div>`;
+  document.body.appendChild(bg);
+  bg.querySelector("#mclConfirmNo").onclick=()=>bg.remove();
+  bg.querySelector("#mclConfirmYes").onclick=()=>{ bg.remove(); onYes(); };
+}
+function mclStripHtml(html){ const d=document.createElement("div"); d.innerHTML=html||""; return (d.textContent||"").replace(/\s+/g," ").trim(); }
+// Downscales + compresses a photo to a Blob before it's uploaded, so phone photos stay small and fast.
+function mclReadImageResized(file, maxDim=1280, quality=0.72){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>{
+      const img=new Image();
+      img.onload=()=>{
+        let w=img.width, h=img.height;
+        if(w>maxDim||h>maxDim){ const scale=maxDim/Math.max(w,h); w=Math.round(w*scale); h=Math.round(h*scale); }
+        const canvas=document.createElement("canvas"); canvas.width=w; canvas.height=h;
+        const ctx=canvas.getContext("2d"); ctx.drawImage(img,0,0,w,h);
+        canvas.toBlob(blob=>{ if(blob) resolve(blob); else reject(new Error("Could not compress image")); }, "image/jpeg", quality);
+      };
+      img.onerror=()=>reject(new Error("Could not read image"));
+      img.src=reader.result;
+    };
+    reader.onerror=()=>reject(new Error("Could not read file"));
+    reader.readAsDataURL(file);
+  });
+}
+function mclShowImageFull(src){
+  const bg=document.createElement("div"); bg.className="mcl-modal-bg";
+  bg.style.background="rgba(0,0,0,.82)"; bg.style.cursor="zoom-out";
+  bg.innerHTML=`<img src="${src}" style="max-width:92vw;max-height:88vh;border-radius:6px;box-shadow:0 8px 30px rgba(0,0,0,.5);">`;
+  bg.onclick=()=>bg.remove();
+  document.body.appendChild(bg);
+}
+
+// Equipment name suggestions, pulled live from the Maintenance Schedule Log's own data.
+function mclEquipmentNames(){
+  const set=new Map();
+  (SCHEDULE||[]).forEach(r=>{ const n=(r.name||"").toString().trim(); if(n) set.set(n.toLowerCase(), n); });
+  return [...set.values()].sort((a,b)=>a.localeCompare(b));
+}
+
+async function showChecklist(){
+  currentDef=null;
+  expandedMod=-1; expandedCat=-1; applyExpanded();
+  document.querySelectorAll(".navbtn").forEach(b=>b.classList.remove("active"));
+  document.getElementById("contentTitle").textContent="Maintenance Checklist";
+  document.getElementById("filterPanel").style.display="none";
+  setView("mcl");
+  if(!window.MCL_SHEETS_CONFIGURED){ renderMclSetup(); return; }
+  mclLoading=true;
+  document.getElementById("mclTabs").innerHTML="";
+  document.getElementById("mclContent").innerHTML=`<div class="card" style="min-height:auto;"><div class="mcl-empty">Connecting to the Google Sheet\u2026</div></div>`;
+  await mclLoad();
+  mclLoading=false;
+  if(mclLoadError){
+    document.getElementById("mclContent").innerHTML=`<div class="card" style="min-height:auto;"><div class="mcl-empty">Could not reach the Sheet: ${mclEsc(mclLoadError)}<br><br>Check the Web app URL and that the Apps Script deployment is set to "Anyone" access, then reopen this tab.</div></div>`;
+    return;
+  }
+  renderMcl();
+}
+
+function renderMclSetup(){
+  document.getElementById("mclTabs").innerHTML="";
+  document.getElementById("mclContent").innerHTML=`<div class="card" style="min-height:auto;">`+
+    `<div class="sec-title" style="margin-top:0;">Connect a Google Sheet</div>`+
+    `<div class="mcl-doc-hint" style="font-size:13px;line-height:1.7;">`+
+    `Templates, checklists, and photos are stored in a <b>Google Sheet</b> (photos in a Drive folder) so every device sees the same data. `+
+    `This dashboard file isn't connected yet. Open the file and find the <code>MCL_SHEETS_WEBAPP_URL</code> constant `+
+    `near the top (search for "MAINTENANCE CHECKLIST BACKEND"), then:<br><br>`+
+    `1. Create a blank Google Sheet, copy its ID from the URL<br>`+
+    `2. In that Sheet: Extensions \u2192 Apps Script \u2192 paste in the provided Code.gs and set the Sheet ID<br>`+
+    `3. Deploy \u2192 New deployment \u2192 Web app \u2192 Execute as Me, access: Anyone \u2192 Deploy<br>`+
+    `4. Paste the Web app URL into <code>MCL_SHEETS_WEBAPP_URL</code>, save, and reopen this tab.`+
+    `</div></div>`;
+}
+
+function renderMcl(){
+  const tabs=[{id:"templates",label:"Templates"},{id:"new",label:"New Checklist"},{id:"history",label:"History"}];
+  document.getElementById("mclTabs").innerHTML=tabs.map(t=>
+    `<button class="mcl-tab${mclTab===t.id?" active":""}" data-mcltab="${t.id}">${t.label}</button>`).join("");
+  document.querySelectorAll("[data-mcltab]").forEach(b=>b.onclick=()=>{ mclTab=b.dataset.mcltab; renderMcl(); });
+  try{
+    if(mclTab==="templates") mclRenderTemplates();
+    else if(mclTab==="new") mclRenderNewChecklist();
+    else mclRenderHistory();
+  }catch(e){
+    console.error("Maintenance Checklist render error:",e);
+    document.getElementById("mclContent").innerHTML=
+      `<div class="card" style="min-height:auto;"><div class="mcl-empty">Something went wrong showing this tab: ${mclEsc(e.message)}<br><br>Try another tab, or re-upload the template if the issue is with a specific one.</div></div>`;
+  }
+}
+
+/* ---- TEMPLATES (uploaded from .docx, kept as the full document) ---- */
+function mclRenderTemplates(){
+  const wrap=document.getElementById("mclContent");
+  let html=`<div class="card mcl-panel" style="min-height:auto;">`+
+    `<div class="sec-title" style="margin-top:0;display:flex;align-items:center;justify-content:space-between;">`+
+    `Checklist Templates<button class="mcl-gold-btn" id="mclUploadBtn">+ Upload Word Template</button></div>`+
+    `<input type="file" id="mclFileInput" accept=".docx" style="display:none;">`;
+  if(!mclTemplates.length){
+    html+=`<div class="mcl-empty">No templates yet. Upload a .docx file &mdash; each line becomes one checklist item.</div>`;
+  } else {
+    mclTemplates.forEach(t=>{
+      const n=(t.items||[]).length;
+      html+=`<div class="mcl-row"><div><div class="mcl-row-main">${mclEsc(t.name)}</div>`+
+        `<div class="mcl-row-sub">${n} item${n===1?"":"s"} &middot; from ${mclEsc(t.sourceFile||"manual")}</div></div>`+
+        `<div style="display:flex;gap:8px;">`+
+        `<button class="fbtn" style="width:auto;margin:0;" data-preview-tpl="${t.id}">Preview</button>`+
+        `<button class="fbtn" style="width:auto;margin:0;" data-del-tpl="${t.id}">Delete</button></div></div>`;
+    });
+  }
+  html+=`</div>`;
+  wrap.innerHTML=html;
+  document.getElementById("mclUploadBtn").onclick=()=>document.getElementById("mclFileInput").click();
+  document.getElementById("mclFileInput").onchange=(e)=>{ const f=e.target.files[0]; if(f) mclHandleUpload(f); e.target.value=""; };
+  wrap.querySelectorAll("[data-del-tpl]").forEach(b=>b.onclick=()=>{
+    mclConfirmModal("Delete this template? Past checklist history is kept.", async()=>{
+      try{
+        await mclDeleteTemplateRemote(b.dataset.delTpl);
+        mclTemplates=mclTemplates.filter(t=>t.id!==b.dataset.delTpl);
+        mclToast("Template deleted"); renderMcl();
+      }catch(e){ mclToast("Could not delete: "+e.message); }
+    });
+  });
+  wrap.querySelectorAll("[data-preview-tpl]").forEach(b=>b.onclick=()=>{
+    const t=mclTemplates.find(x=>x.id===b.dataset.previewTpl); if(!t) return;
+    mclShowItemsModal(t.name, t.items||[]);
+  });
+}
+
+async function mclHandleUpload(file){
+  if(!/\.docx$/i.test(file.name)){ mclToast("Please upload a .docx Word file"); return; }
+  mclToast("Reading "+file.name+"\u2026");
+  try{
+    const buf=await file.arrayBuffer();
+    const result=await mammoth.extractRawText({arrayBuffer:buf});
+    const items=(result.value||"").split("\n").map(s=>s.replace(/^[\s\u2022\-*\d.()]+/,"").trim()).filter(Boolean);
+    if(!items.length){ mclToast("No text found in that document"); return; }
+    mclOpenTemplateReview(file.name, items);
+  }catch(e){
+    mclToast("Could not read that Word file: "+e.message);
+  }
+}
+
+// Lets the person edit/remove/add checklist item lines (parsed from the .docx) before saving as a template.
+function mclOpenTemplateReview(fileName, items){
+  const bg=document.createElement("div"); bg.className="mcl-modal-bg";
+  const defaultName=fileName.replace(/\.docx$/i,"");
+  function itemsHtml(){
+    return items.map((v,i)=>`<div class="mcl-item-row"><input class="mcl-input" data-mcl-item-idx="${i}" value="${mclEsc(v)}">`+
+      `<button class="fbtn" style="width:auto;margin:0;" data-mcl-remove-item="${i}">\u2715</button></div>`).join("");
+  }
+  function draw(){
+    bg.innerHTML=`<div class="mcl-modal"><div class="sec-title mcl-panel" style="margin-top:0;">Review Template</div>`+
+      `<div class="mcl-field"><label class="mcl-label">Template name</label>`+
+      `<input class="mcl-input" id="mclTplName" value="${mclEsc(defaultName)}"></div>`+
+      `<div class="mcl-field"><label class="mcl-label">Checklist items (edit or remove any line that isn't a real item)</label>`+
+      `<div id="mclItemsWrap">${itemsHtml()}</div>`+
+      `<button class="fbtn" style="width:auto;margin-top:4px;" id="mclAddItem">+ Add item</button></div>`+
+      `<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;">`+
+      `<button class="fbtn" style="width:auto;margin:0;" id="mclCancelTpl">Cancel</button>`+
+      `<button class="mcl-gold-btn" id="mclSaveTpl">Save Template</button></div></div>`;
+    bg.querySelectorAll("[data-mcl-item-idx]").forEach(inp=>{
+      inp.oninput=()=>{ items[+inp.dataset.mclItemIdx]=inp.value; };
+    });
+    bg.querySelectorAll("[data-mcl-remove-item]").forEach(btn=>{
+      btn.onclick=()=>{ const nm=bg.querySelector("#mclTplName").value; items.splice(+btn.dataset.mclRemoveItem,1); if(!items.length) items=[""]; draw(); bg.querySelector("#mclTplName").value=nm; };
+    });
+    bg.querySelector("#mclAddItem").onclick=()=>{ const nm=bg.querySelector("#mclTplName").value; items.push(""); draw(); bg.querySelector("#mclTplName").value=nm; };
+    bg.querySelector("#mclCancelTpl").onclick=()=>bg.remove();
+    bg.querySelector("#mclSaveTpl").onclick=async()=>{
+      const name=bg.querySelector("#mclTplName").value.trim();
+      const clean=items.map(s=>s.trim()).filter(Boolean);
+      if(!name){ mclToast("Template name is required"); return; }
+      if(!clean.length){ mclToast("Add at least one checklist item"); return; }
+      const tpl={ id:mclUid("tpl"), name, sourceFile:fileName, items:clean.map(text=>({id:mclUid("item"),text})), createdAt:new Date().toISOString() };
+      const saveBtn=bg.querySelector("#mclSaveTpl");
+      saveBtn.disabled=true; saveBtn.textContent="Saving\u2026";
+      try{
+        await mclCreateTemplate(tpl);
+        mclTemplates.push(tpl);
+        bg.remove(); mclToast("Template saved"); mclTab="templates"; renderMcl();
+      }catch(e){
+        saveBtn.disabled=false; saveBtn.textContent="Save Template";
+        mclToast("Could not save: "+e.message);
+      }
+    };
+  }
+  draw();
+  document.body.appendChild(bg);
+}
+
+// Read-only viewer for a template's or submission's checklist items, reused for template preview
+// and checklist history.
+function mclShowItemsModal(title, items, statusBadge){
+  const bg=document.createElement("div"); bg.className="mcl-modal-bg";
+  const itemsHtml=items.map(i=>{
+    const status=i.status;
+    return `<div class="mcl-row"><div><div class="mcl-row-main">${mclEsc(i.text)}</div>`+
+      (i.notes?`<div class="mcl-row-sub">${mclEsc(i.notes)}</div>`:"")+`</div>`+
+      (status?`<span class="mcl-stamp ${status==="fail"?"fail":status==="pass"?"pass":""}" style="${status==="na"?"background:#eef0f1;color:var(--muted);":""}">${status.toUpperCase()}</span>`:"")+
+      `</div>`;
+  }).join("");
+  bg.innerHTML=`<div class="mcl-modal"><div class="sec-title mcl-panel" style="margin-top:0;display:flex;align-items:center;justify-content:space-between;">`+
+    `${mclEsc(title)}${statusBadge?`<span class="mcl-stamp ${statusBadge==="PASS"?"pass":"fail"}">${statusBadge}</span>`:""}</div>`+
+    `<div id="mclItemsModalBody">${itemsHtml}</div>`+
+    `<div style="text-align:right;margin-top:14px;"><button class="fbtn" style="width:auto;margin:0;" id="mclCloseDoc">Close</button></div></div>`;
+  document.body.appendChild(bg);
+  bg.querySelector("#mclCloseDoc").onclick=()=>bg.remove();
+  return bg;
+}
+
+/* ---- NEW CHECKLIST ---- */
+// Quick-access card for the 4 fixed hazard checklists, shown at the top of "New Checklist".
+// Stage 1: pick the equipment type (Pump / Exhaust / Water Heater / Drainase), which reveals
+// Equipment/Template/Technician/Date below it. Next moves to stage 2 (checklist-item review + submit).
+// Clicking one of the 4 type buttons opens a dedicated page (Equipment/Template/Technician/Date +
+// Equipment ID/Due Date + Safety/Hazard checkboxes for that type). Next moves to the page with the
+// chosen Template's checklist items, which has the Submit button.
+function mclRenderNewChecklist(){
+  const wrap=document.getElementById("mclContent");
+  if(!mclPickedType){
+    mclRenderTypeSelect(wrap);
+    return;
+  }
+  if(!mclDraft){
+    const kw=MCL_TYPE_TEMPLATE_KEYWORDS[mclPickedType]||[];
+    const match=mclTemplates.find(t=>kw.some(k=>t.name.toLowerCase().includes(k)));
+    const t0=match||mclTemplates[0];
+    mclDraft={ equipment:"", templateId:t0?t0.id:"", technician:"", date:new Date().toISOString().slice(0,10),
+      location:"", equipmentId:"", dueDate:"", safety:{}, hazard:{}, notes:"", results:{}, photos:[] };
+  }
+  const d=mclDraft;
+  if(!d.photos) d.photos=[];
+  if(!d.results) d.results={};
+  if(!d.safety) d.safety={};
+  if(!d.hazard) d.hazard={};
+  if(mclNewStage==="review" && mclTemplates.length){
+    mclRenderNewChecklistReview(wrap,d);
+  } else {
+    mclNewStage="info";
+    mclRenderTypeChecklistInfo(wrap,d);
+  }
+}
+
+function mclRenderTypeSelect(wrap){
+  let html=`<div class="card mcl-panel" style="min-height:auto;">`+
+    `<div class="sec-title" style="margin-top:0;">Log a Maintenance Checklist</div>`+
+    `<div class="mcl-doc-hint" style="margin-bottom:14px;">Pick the equipment type to get started.</div>`+
+    `<div style="display:flex;flex-direction:column;gap:10px;max-width:420px;">`;
+  Object.keys(MCL_HAZARD_TYPES).forEach(k=>{
+    html+=`<button type="button" class="mcl-gold-btn" data-mcl-picktype="${k}" style="text-align:left;">${mclEsc(MCL_HAZARD_TYPES[k].label)}</button>`;
+  });
+  html+=`</div></div>`;
+  wrap.innerHTML=html;
+  wrap.querySelectorAll("[data-mcl-picktype]").forEach(b=>b.onclick=()=>{
+    mclPickedType=b.dataset.mclPicktype;
+    mclDraft=null; mclNewStage="info";
+    renderMcl();
+  });
+}
+
+// Page 1 (for the picked type): Equipment/Template/Technician/Date, Equipment ID/Due Date, and the
+// Safety Instructions + type-specific Hazard checkboxes.
+function mclRenderTypeChecklistInfo(wrap,d){
+  const cfg=MCL_HAZARD_TYPES[mclPickedType];
+  const eqNames=mclEquipmentNames();
+  let html=`<div class="card mcl-panel" style="min-height:auto;">`+
+    `<div class="sec-title" style="margin-top:0;display:flex;align-items:center;justify-content:space-between;">`+
+    `${mclEsc(cfg.title)}<button class="fbtn" style="width:auto;margin:0;" id="mclChangeTypeBtn">&larr; Change type</button></div>`;
+
+  html+=`<datalist id="mclEqList">${eqNames.map(n=>`<option value="${mclEsc(n)}">`).join("")}</datalist>`;
+  html+=`<div class="mcl-form-grid">`;
+  html+=`<div class="mcl-field"><label class="mcl-label">Equipment</label>`+
+    `<input class="mcl-input" id="mclEqInput" list="mclEqList" placeholder="Type or pick from Maintenance Schedule Log" value="${mclEsc(d.equipment)}"></div>`;
+  html+=`<div class="mcl-field"><label class="mcl-label">Template</label><select class="mcl-select" id="mclTplSelect"${mclTemplates.length?"":" disabled"}>`+
+    (mclTemplates.length ? mclTemplates.map(t=>`<option value="${t.id}"${t.id===d.templateId?" selected":""}>${mclEsc(t.name)}</option>`).join("") : `<option value="">No templates uploaded yet</option>`)+`</select></div>`;
+  html+=`</div><div class="mcl-form-grid">`;
+  html+=`<div class="mcl-field"><label class="mcl-label">Technician</label>`+
+    `<input class="mcl-input" id="mclTechInput" value="${mclEsc(d.technician)}" placeholder="Your name"></div>`;
+  html+=`<div class="mcl-field"><label class="mcl-label">Date</label>`+
+    `<input class="mcl-input" type="date" id="mclDateInput" value="${d.date}"></div>`;
+  html+=`</div><div class="mcl-form-grid">`;
+  const locs=mclLocationsForType(mclPickedType);
+  const eqIds=d.location ? mclEquipmentIdsForTypeLocation(mclPickedType,d.location) : [];
+  const dueDates=d.equipmentId ? mclDueDatesForEquipment(mclPickedType,d.equipmentId) : [];
+  html+=`<div class="mcl-field"><label class="mcl-label">Location</label><select class="mcl-select" id="mclLocationSelect">`+
+    `<option value="">${locs.length?"Select location":"No locations found"}</option>`+
+    locs.map(l=>`<option value="${mclEsc(l)}"${d.location===l?" selected":""}>${mclEsc(l)}</option>`).join("")+
+    `</select></div>`;
+  html+=`<div class="mcl-field"><label class="mcl-label">Equipment ID</label><select class="mcl-select" id="mclEqIdSelect"${d.location?"":" disabled"}>`+
+    (!d.location ? `<option value="">Pick a location first</option>`
+      : `<option value="">${eqIds.length?"Select Equipment ID":"No equipment found for this location"}</option>`+
+        eqIds.map(id=>`<option value="${mclEsc(id)}"${d.equipmentId===id?" selected":""}>${mclEsc(id)}</option>`).join(""))+
+    `</select></div>`;
+  html+=`</div>`;
+  html+=`<div class="mcl-field" style="max-width:340px;"><label class="mcl-label">Due Date</label><select class="mcl-select" id="mclDueDateSelect"${d.equipmentId?"":" disabled"}>`+
+    (!d.equipmentId ? `<option value="">Pick an Equipment ID first</option>`
+      : `<option value="">${dueDates.length?"Select due date":"No scheduled dates found for this equipment"}</option>`+
+        dueDates.map(dd=>`<option value="${dd.value}"${d.dueDate===dd.value?" selected":""}>${mclEsc(dd.label)}</option>`).join(""))+
+    `</select></div>`;
+
+  html+=`<div class="mcl-field"><label class="mcl-label">Safety Instructions</label>`;
+  MCL_SAFETY_ITEMS.forEach((txt,i)=>{
+    const checked=d.safety[i]?"checked":"";
+    html+=`<label class="mcl-row" style="cursor:pointer;"><span style="display:flex;align-items:center;gap:10px;"><input type="checkbox" data-mcl-safety="${i}" ${checked}><span class="mcl-row-main" style="font-size:13px;font-weight:500;">${mclEsc(txt)}</span></span></label>`;
+  });
+  html+=`</div>`;
+
+  html+=`<div class="mcl-field"><label class="mcl-label">Hazard</label>`;
+  cfg.hazards.forEach((txt,i)=>{
+    const checked=d.hazard[i]?"checked":"";
+    html+=`<label class="mcl-row" style="cursor:pointer;"><span style="display:flex;align-items:center;gap:10px;"><input type="checkbox" data-mcl-hazard="${i}" ${checked}><span class="mcl-row-main" style="font-size:13px;font-weight:500;">${mclEsc(txt)}</span></span></label>`;
+  });
+  html+=`</div>`;
+
+  if(!mclTemplates.length){
+    html+=`<div class="mcl-empty" style="margin-bottom:14px;">No checklist templates yet. Upload a Word (.docx) template under the "Templates" tab before continuing.</div>`;
+  }
+  html+=`<button class="mcl-gold-btn" id="mclNextBtn"${mclTemplates.length?"":" disabled"}>Next</button></div>`;
+  wrap.innerHTML=html;
+
+  wrap.querySelector("#mclChangeTypeBtn").onclick=()=>{ mclPickedType=null; mclDraft=null; renderMcl(); };
+  wrap.querySelector("#mclEqInput").oninput=e=>{ d.equipment=e.target.value; };
+  const tplSelect=wrap.querySelector("#mclTplSelect");
+  if(mclTemplates.length) tplSelect.onchange=e=>{ d.templateId=e.target.value; d.results={}; };
+  wrap.querySelector("#mclTechInput").oninput=e=>{ d.technician=e.target.value; };
+  wrap.querySelector("#mclDateInput").onchange=e=>{ d.date=e.target.value; };
+  wrap.querySelector("#mclLocationSelect").onchange=e=>{
+    d.location=e.target.value;
+    d.equipmentId="";           // valid Equipment IDs depend on the chosen location
+    d.dueDate="";                // ...and valid due dates depend on the chosen Equipment ID
+    mclRenderTypeChecklistInfo(wrap,d);   // re-render to populate/enable the next dropdowns
+  };
+  const eqIdSelect=wrap.querySelector("#mclEqIdSelect");
+  if(d.location) eqIdSelect.onchange=e=>{
+    d.equipmentId=e.target.value;
+    d.dueDate="";                // valid due dates depend on the chosen Equipment ID
+    mclRenderTypeChecklistInfo(wrap,d);   // re-render to populate/enable the Due Date dropdown
+  };
+  const dueDateSelect=wrap.querySelector("#mclDueDateSelect");
+  if(d.equipmentId) dueDateSelect.onchange=e=>{ d.dueDate=e.target.value; };
+  wrap.querySelectorAll("[data-mcl-safety]").forEach(cb=>cb.onchange=()=>{ d.safety[cb.dataset.mclSafety]=cb.checked; });
+  wrap.querySelectorAll("[data-mcl-hazard]").forEach(cb=>cb.onchange=()=>{ d.hazard[cb.dataset.mclHazard]=cb.checked; });
+
+  const nextBtn=wrap.querySelector("#mclNextBtn");
+  if(mclTemplates.length) nextBtn.onclick=()=>{
+    if(!d.equipment.trim()){ mclToast("Enter or pick an equipment name"); return; }
+    if(!d.technician.trim()){ mclToast("Enter the technician name"); return; }
+    if(!d.location){ mclToast("Pick a location"); return; }
+    if(!d.equipmentId){ mclToast("Pick an Equipment ID"); return; }
+    if(!d.dueDate){ mclToast("Pick a due date"); return; }
+    const tpl=mclTemplates.find(t=>t.id===d.templateId);
+    if(!tpl || !(tpl.items||[]).length){ mclToast("Pick a template that has checklist items"); return; }
+    mclNewStage="review";
+    renderMcl();
+  };
+}
+
+// Page 2: review the chosen template's checklist items, add photos/notes, then submit
+// (saves the checklist AND syncs the schedule sheet/tracker/Last Maintenance for the picked type).
+function mclRenderNewChecklistReview(wrap,d){
+  const tpl=mclTemplates.find(t=>t.id===d.templateId)||mclTemplates[0];
+  if(!tpl.items) tpl.items=[];
+  d.templateId=tpl.id;
+  const esc=mclEsc;
+  const goBack=()=>{ mclNewStage="info"; renderMcl(); };
+
+  let html=`<div class="card mcl-panel" style="min-height:auto;">`+
+    `<div class="sec-title" style="margin-top:0;display:flex;align-items:center;justify-content:space-between;">`+
+    `${mclEsc(tpl.name)}<button class="fbtn" style="width:auto;margin:0;" id="mclStage1BackBtn">&larr; Back</button></div>`+
+    `<div class="mcl-doc-hint" style="margin-bottom:14px;">${esc(d.equipment)} &middot; ${esc(d.location)} &middot; ${esc(d.equipmentId)} &middot; ${esc(d.technician)} &middot; ${esc(d.date)}</div>`;
+
+  html+=`<div class="mcl-field"><label class="mcl-label">Photo Proof</label>`+
+    `<input type="file" id="mclPhotoUpload" accept="image/*" multiple style="display:none;">`+
+    `<input type="file" id="mclPhotoCamera" accept="image/*" capture="environment" style="display:none;">`+
+    `<div style="display:flex;gap:8px;margin-bottom:${d.photos.length?"10px":"0"};">`+
+    `<button type="button" class="fbtn" style="width:auto;margin:0;" id="mclPhotoUploadBtn">\u{1F4CE} Upload Photo</button>`+
+    `<button type="button" class="fbtn" style="width:auto;margin:0;" id="mclPhotoCameraBtn">\u{1F4F7} Take Photo</button></div>`+
+    (d.photos.length ? `<div class="mcl-photo-grid" id="mclPhotoGrid">`+
+      d.photos.map((p,i)=>`<div class="mcl-photo-thumb"><img src="${p.previewUrl}" data-mcl-photo-view="${i}"><button type="button" data-mcl-photo-remove="${i}">\u2715</button></div>`).join("")+
+      `</div>` : ``)+
+    `</div>`;
+
+  html+=`<div class="mcl-field"><label class="mcl-label">Checklist Items</label>`;
+  if(!tpl.items.length){
+    html+=`<div class="mcl-empty">This template has no checklist items (it may be from an older version). Try deleting it under "Templates" and re-uploading the Word file.</div>`;
+  }
+  tpl.items.forEach(item=>{
+    const cur=d.results[item.id]||{};
+    html+=`<div class="mcl-check-item"><div class="mcl-check-item-text">${esc(item.text)}</div>`+
+      `<div class="mcl-status-btns">`+
+      mclStatusBtn(item.id,"pass","Pass",cur.status)+
+      mclStatusBtn(item.id,"fail","Fail",cur.status)+
+      mclStatusBtn(item.id,"na","N/A",cur.status)+
+      `</div><input class="mcl-input" data-mcl-note="${item.id}" placeholder="Notes (optional)" value="${esc(cur.notes||"")}"></div>`;
+  });
+  html+=`</div>`;
+  html+=`<div class="mcl-field"><label class="mcl-label">Overall Notes</label>`+
+    `<textarea class="mcl-textarea" id="mclOverallNotes" placeholder="Anything else worth logging?">${esc(d.notes)}</textarea></div>`;
+  html+=`<div style="display:flex;gap:10px;">`+
+    `<button class="fbtn" style="width:auto;margin:0;" id="mclBackBtn2">&larr; Back</button>`+
+    `<button class="mcl-gold-btn" id="mclSubmitBtn">Submit Checklist</button></div></div>`;
+  wrap.innerHTML=html;
+
+  wrap.querySelector("#mclStage1BackBtn").onclick=goBack;
+  wrap.querySelector("#mclBackBtn2").onclick=goBack;
+
+  wrap.querySelectorAll("[data-mcl-status]").forEach(btn=>{
+    btn.onclick=()=>{ const id=btn.dataset.mclStatus, val=btn.dataset.mclVal; d.results[id]=d.results[id]||{}; d.results[id].status=val; mclRenderNewChecklistReview(wrap,d); };
+  });
+  wrap.querySelectorAll("[data-mcl-note]").forEach(inp=>{
+    inp.oninput=()=>{ const id=inp.dataset.mclNote; d.results[id]=d.results[id]||{}; d.results[id].notes=inp.value; };
+  });
+
+  const handlePhotoFiles=async(files)=>{
+    if(!files || !files.length) return;
+    mclToast("Adding photo\u2026");
+    for(const f of files){
+      try{
+        const blob=await mclReadImageResized(f);
+        d.photos.push({ blob, previewUrl:URL.createObjectURL(blob) });
+      }catch(e){ mclToast("Could not read that photo"); }
+    }
+    mclRenderNewChecklistReview(wrap,d);
+  };
+  wrap.querySelector("#mclPhotoUploadBtn").onclick=()=>wrap.querySelector("#mclPhotoUpload").click();
+  wrap.querySelector("#mclPhotoCameraBtn").onclick=()=>wrap.querySelector("#mclPhotoCamera").click();
+  wrap.querySelector("#mclPhotoUpload").onchange=e=>{ handlePhotoFiles([...e.target.files]); e.target.value=""; };
+  wrap.querySelector("#mclPhotoCamera").onchange=e=>{ handlePhotoFiles([...e.target.files]); e.target.value=""; };
+  wrap.querySelectorAll("[data-mcl-photo-remove]").forEach(btn=>{
+    btn.onclick=()=>{
+      const removed=d.photos.splice(+btn.dataset.mclPhotoRemove,1)[0];
+      if(removed) URL.revokeObjectURL(removed.previewUrl);
+      mclRenderNewChecklistReview(wrap,d);
+    };
+  });
+  wrap.querySelectorAll("[data-mcl-photo-view]").forEach(img=>{
+    img.onclick=()=>mclShowImageFull(d.photos[+img.dataset.mclPhotoView].previewUrl);
+  });
+
+  wrap.querySelector("#mclOverallNotes").oninput=e=>{ d.notes=e.target.value; };
+
+  wrap.querySelector("#mclSubmitBtn").onclick=async()=>{
+    if(!tpl.items.length){ mclToast("This template has no checklist items \u2014 pick a different template"); return; }
+    const missing=tpl.items.filter(i=>!d.results[i.id]||!d.results[i.id].status);
+    if(missing.length){ mclToast("Mark a status for every checklist item"); return; }
+    const items=tpl.items.map(i=>({ itemId:i.id, text:i.text, status:d.results[i.id].status, notes:d.results[i.id].notes||"" }));
+    const anyFail=items.some(i=>i.status==="fail");
+    const submitBtn=document.getElementById("mclSubmitBtn");
+    submitBtn.disabled=true;
+    submitBtn.textContent=d.photos.length?"Uploading photos\u2026":"Submitting\u2026";
+    const subId=mclUid("sub");
+    try{
+      const submission={
+        id:subId, equipment:d.equipment.trim(), templateId:tpl.id, templateName:tpl.name,
+        technician:d.technician.trim(), date:d.date, items, notes:d.notes.trim(),
+        overallStatus:anyFail?"FAIL":"PASS", photos:[], createdAt:new Date().toISOString()
+      };
+      const photoUrls=await mclCreateSubmission(submission, d.photos.map(p=>p.blob));
+      submission.photos=photoUrls;
+      mclSubmissions.unshift(submission);
+
+      // Sync the schedule sheet / tracker / Last Maintenance for the picked equipment type,
+      // keyed by Equipment ID + Due Date, plus the Safety/Hazard checkboxes from stage 1.
+      let syncNote="";
+      if(mclPickedType){
+        try{
+          const hcfg=MCL_HAZARD_TYPES[mclPickedType];
+          const safetyChecked=MCL_SAFETY_ITEMS.map((txt,i)=>({text:txt,checked:!!d.safety[i]}));
+          const hazardChecked=hcfg.hazards.map((txt,i)=>({text:txt,checked:!!d.hazard[i]}));
+          const result=await mclApiPost("submitMaintenanceLog", {
+            record:{ type:mclPickedType, location:d.location, equipmentId:d.equipmentId, dueDate:d.dueDate,
+              safetyChecked, hazardChecked },
+            photos:[]
+          });
+          syncNote=result.synced ? " — schedule sheet updated" : " — no matching schedule row found for that Equipment ID / Due Date";
+        }catch(e){ syncNote=" — sync failed: "+e.message; }
+      }
+
+      mclToast("Checklist submitted"+syncNote);
+      d.photos.forEach(p=>URL.revokeObjectURL(p.previewUrl));
+      mclDraft=null; mclNewStage="info"; mclPickedType=null; mclTab="history"; await mclLoad(); renderMcl();
+    }catch(e){
+      submitBtn.disabled=false; submitBtn.textContent="Submit Checklist";
+      mclToast("Could not submit: "+e.message);
+    }
+  };
+}
+function mclStatusBtn(id,val,label,current){
+  return `<button type="button" class="mcl-status-btn ${val}${current===val?" active":""}" data-mcl-status="${id}" data-mcl-val="${val}">${label}</button>`;
+}
+
+/* ---- HISTORY ---- */
+function mclRenderHistory(){
+  const wrap=document.getElementById("mclContent");
+  let subs=mclSubmissions.slice();
+  if(mclHistFilter.equipment) subs=subs.filter(s=>s.equipment===mclHistFilter.equipment);
+  if(mclHistFilter.status) subs=subs.filter(s=>s.overallStatus===mclHistFilter.status);
+  const eqOptions=[...new Set(mclSubmissions.map(s=>s.equipment))].sort((a,b)=>a.localeCompare(b));
+
+  let html=``;
+  if(mclMaintLogs.length){
+    html+=`<div class="card" style="min-height:auto;margin-bottom:16px;">`+
+      `<div class="sec-title" style="margin-top:0;">Maintenance Logs (Pump / Exhaust / Water Heater / Drainase)</div>`+
+      mclMaintLogs.map(l=>{
+        const cfg=MCL_HAZARD_TYPES[l.type]||{label:l.type};
+        const synced=(l.synced===true||l.synced==="true"||l.synced==="TRUE");
+        return `<div class="mcl-row"><div><div class="mcl-row-main">${mclEsc(cfg.label)} — ${mclEsc(l.equipmentId)}</div>`+
+          `<div class="mcl-row-sub">${mclEsc(l.location)} &middot; Due ${mclFmtDate(l.dueDate)}</div></div>`+
+          `<span class="mcl-stamp ${synced?"pass":"fail"}">${synced?"SYNCED":"NOT MATCHED"}</span></div>`;
+      }).join("")+
+      `</div>`;
+  }
+  html+=`<div class="card" style="min-height:auto;">`+
+    `<div class="sec-title" style="margin-top:0;display:flex;align-items:center;justify-content:space-between;">`+
+    `History<button class="fbtn" style="width:auto;margin:0;" id="mclExportBtn">Export CSV</button></div>`;
+  html+=`<div class="mcl-filters">`+
+    `<select class="mcl-select" id="mclFilterEq"><option value="">All equipment</option>`+
+    eqOptions.map(n=>`<option value="${mclEsc(n)}"${mclHistFilter.equipment===n?" selected":""}>${mclEsc(n)}</option>`).join("")+`</select>`+
+    `<select class="mcl-select" id="mclFilterStatus"><option value="">All statuses</option>`+
+    `<option value="PASS"${mclHistFilter.status==="PASS"?" selected":""}>Pass</option>`+
+    `<option value="FAIL"${mclHistFilter.status==="FAIL"?" selected":""}>Fail</option></select></div>`;
+
+  if(!subs.length){
+    html+=`<div class="mcl-empty">No matching checklist submissions yet.</div>`;
+  } else {
+    html+=subs.map(s=>{
+      const items=Array.isArray(s.items)?s.items:[];
+      const photos=Array.isArray(s.photos)?s.photos:[];
+      let body=``;
+
+      if(items.length){
+        body+=items.map(i=>{
+          const st=i.status||"";
+          const stampClass=st==="pass"?"pass":st==="fail"?"fail":"";
+          const stampStyle=st==="na"?"background:#eef0f1;color:var(--muted);":"";
+          return `<div class="mcl-row"><div><div class="mcl-row-main" style="font-size:13px;">${mclEsc(i.text)}</div>`+
+            (i.notes?`<div class="mcl-row-sub">${mclEsc(i.notes)}</div>`:"")+`</div>`+
+            (st?`<span class="mcl-stamp ${stampClass}" style="${stampStyle}">${st.toUpperCase()}</span>`:"")+
+            `</div>`;
+        }).join("");
+      } else {
+        body+=`<div class="mcl-row-sub" style="padding:8px 4px;">No item-level detail saved for this record.</div>`;
+      }
+
+      if(photos.length){
+        body+=`<div class="mcl-field" style="margin-top:12px;margin-bottom:0;"><label class="mcl-label">Photo Proof</label>`+
+          `<div class="mcl-photo-grid">`+
+          photos.map((p,i)=>`<div class="mcl-photo-thumb"><img src="${p}" referrerpolicy="no-referrer" loading="lazy" data-mcl-hist-photo="${s.id}:${i}"></div>`).join("")+
+          `</div></div>`;
+      }
+
+      if(s.notes && s.notes.trim()){
+        body+=`<div class="mcl-field" style="margin-top:12px;margin-bottom:0;"><label class="mcl-label">Overall Notes</label>`+
+          `<div class="mcl-row-sub" style="font-size:13px;color:#1d2b30;">${mclEsc(s.notes)}</div></div>`;
+      }
+
+      return `<details class="mcl-hist-card"><summary class="mcl-hist-head">`+
+        `<div><div class="mcl-row-main">${mclEsc(s.equipment)}</div>`+
+        `<div class="mcl-row-sub">${mclFmtDate(s.date)} &middot; ${mclEsc(s.technician)} &middot; ${mclEsc(s.templateName||"")}</div></div>`+
+        `<div style="display:flex;align-items:center;gap:10px;">`+
+        `<span class="mcl-stamp ${s.overallStatus==="PASS"?"pass":"fail"}">${s.overallStatus}</span>`+
+        `<button class="fbtn" style="width:auto;margin:0;" data-mcl-del="${s.id}">Delete</button>`+
+        `<span class="mcl-hist-chevron">\u25BE</span></div></summary>`+
+        `<div class="mcl-hist-body">${body}</div></details>`;
+    }).join("");
+  }
+  html+=`</div>`;
+  wrap.innerHTML=html;
+
+  document.getElementById("mclFilterEq").onchange=e=>{ mclHistFilter.equipment=e.target.value; renderMcl(); };
+  document.getElementById("mclFilterStatus").onchange=e=>{ mclHistFilter.status=e.target.value; renderMcl(); };
+  document.getElementById("mclExportBtn").onclick=()=>mclExportCsv(subs);
+  wrap.querySelectorAll("[data-mcl-del]").forEach(b=>b.onclick=(e)=>{
+    e.preventDefault(); e.stopPropagation();
+    mclConfirmModal("Delete this checklist record? This can't be undone.", async()=>{
+      try{
+        await mclDeleteSubmissionRemote(b.dataset.mclDel);
+        mclSubmissions=mclSubmissions.filter(x=>x.id!==b.dataset.mclDel);
+        mclToast("Checklist deleted");
+        renderMcl();
+      }catch(e){ mclToast("Could not delete: "+e.message); }
+    });
+  });
+  wrap.querySelectorAll("[data-mcl-hist-photo]").forEach(img=>{
+    const [subId,idx]=img.dataset.mclHistPhoto.split(":");
+    const sub=subs.find(x=>x.id===subId);
+    img.onclick=(e)=>{ e.preventDefault(); mclShowImageFull(sub.photos[+idx]); };
+    img.onerror=()=>{
+      const thumb=img.closest(".mcl-photo-thumb");
+      if(thumb) thumb.innerHTML=`<a href="${img.src}" target="_blank" rel="noopener" style="font-size:10px;line-height:1.3;padding:8px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;color:var(--muted);">Open photo</a>`;
+    };
+  });
+}
+
+
+function mclExportCsv(subs){
+  if(!subs.length){ mclToast("Nothing to export"); return; }
+  const rows=[["Date","Equipment","Technician","Template","Overall Status","Photos","Item","Item Status","Item Notes","Overall Notes"]];
+  subs.forEach(s=>{
+    (s.items||[]).forEach(i=>{
+      rows.push([s.date,s.equipment,s.technician,s.templateName||"",s.overallStatus,(s.photos||[]).length,i.text,i.status,i.notes||"",s.notes||""]);
+    });
+  });
+  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\n");
+  const blob=new Blob([csv],{type:"text/csv"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a"); a.href=url; a.download="maintenance-checklist-history.csv"; a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ============== BUILD NAV + FILTERS ============== */
+let expandedMod=0;          // which top-level module is expanded; -1 = none
+let expandedCat=-1;         // which category is expanded inside the open module; -1 = none
+function buildNav(){
+  const nav=document.getElementById("nav");
+  let html="<button class=\"homebtn\" id=\"homeBtn\">\u2302 Overview</button>";
+  html+="<button class=\"alertbtn\" id=\"alertBtn\">\u26A0\uFE0F Alerts<span class=\"badge\" id=\"navBadge\" style=\"display:none;\">0</span></button>";
+  html+=MODULES.map((m,mi)=>{
+    let inner;
+    if(m.buttons){   // module with direct choices (e.g. Maintenance Schedule Log)
+      inner=m.buttons.map(b=>`<button class="navbtn" data-id="${b.id}">${b.label}</button>`).join("");
+    } else {         // module with a category accordion (e.g. Asset Preventive Maintenance)
+      inner=m.cats.map(ci=>{
+        const c=CATS[ci];
+        return `<button class="cat" data-cat="${ci}"><span>${c.name}</span><span class="chev">\u25B8</span></button>`+
+          `<div class="subwrap" data-sub="${ci}">`+
+            c.buttons.map(b=>`<button class="navbtn" data-id="${b.id}">${b.label}</button>`).join("")+
+          `</div>`;
+      }).join("");
+    }
+    return `<button class="modbtn" data-mod="${mi}"><span>${m.icon} ${m.name}</span><span class="chev">\u25B8</span></button>`+
+      `<div class="modwrap" data-modsub="${mi}">`+inner+`</div>`;
+  }).join("");
+  // Maintenance Checklist lives directly below the Maintenance Schedule Log module,
+  // as a single flat button (it has its own internal tabs, not a chart accordion).
+  html+=`<button class="alertbtn" id="mclBtn">\u2705 Maintenance Checklist</button>`;
+  nav.innerHTML=html;
+  nav.querySelector("#homeBtn").onclick=showHome;
+  nav.querySelector("#alertBtn").onclick=showAlerts;
+  nav.querySelector("#mclBtn").onclick=showChecklist;
+  nav.querySelectorAll(".modbtn").forEach(btn=>btn.onclick=()=>toggleMod(+btn.dataset.mod));
+  nav.querySelectorAll(".cat").forEach(btn=>btn.onclick=()=>toggleCat(+btn.dataset.cat));
+  nav.querySelectorAll(".navbtn").forEach(b=>b.onclick=()=>selectChart(b.dataset.id));
+  applyExpanded();
+}
+// Single-open accordion at each tier.
+function toggleMod(mi){ expandedMod = (expandedMod===mi) ? -1 : mi; applyExpanded(); }
+function toggleCat(ci){
+  expandedCat = (expandedCat===ci) ? -1 : ci;
+  applyExpanded();
+}
+function applyExpanded(){
+  document.querySelectorAll(".modbtn").forEach(b=>b.classList.toggle("expanded", +b.dataset.mod===expandedMod));
+  document.querySelectorAll(".modwrap").forEach(s=>s.classList.toggle("open", +s.dataset.modsub===expandedMod));
+  document.querySelectorAll(".cat").forEach(b=>b.classList.toggle("expanded", +b.dataset.cat===expandedCat));
+  document.querySelectorAll(".subwrap").forEach(s=>s.classList.toggle("open", +s.dataset.sub===expandedCat));
+}
+// ONE global Area slicer, built from the union of area/location values across ALL categories.
+function buildAreaFilter(){
+  const panel=document.getElementById("filterPanel");
+  const fb=document.getElementById("filterBtns");
+  if(!currentDef){ panel.style.display="none"; return; }
+  // Build the Area list from the SELECTED chart's own data only.
+  const data=DATA[currentDef.dataKey]||[];
+  const field=currentDef.areaField;
+  const map=new Map();   // norm(value) -> display label (first seen wins, dedupes spelling/zeros)
+  data.forEach(r=>{
+    const v=(r[field]||"").toString().trim();
+    if(v && v.toLowerCase()!=="unknown"){ const k=norm(v); if(!map.has(k)) map.set(k,v); }
+  });
+  const vals=[...map.values()].sort((a,b)=>a.localeCompare(b));
+  // Only show the Area filter when the selected chart actually has area data.
+  if(vals.length===0){ panel.style.display="none"; return; }
+  panel.style.display="";
+  document.getElementById("filterTitle").textContent="Filter — "+(currentDef.areaLabel||"Area");
+  // keep the current selection if it still exists in this chart, otherwise fall back to All
+  if(areaFilter!=="ALL" && !vals.some(v=>norm(v)===norm(areaFilter))) areaFilter="ALL";
+  const opts=[{label:"Show All",val:"ALL"}].concat(vals.map(v=>({label:v,val:v})));
+  fb.innerHTML=opts.map(o=>{
+    const esc=o.val.replace(/&/g,"&amp;").replace(/"/g,"&quot;");
+    const lbl=o.label.replace(/&/g,"&amp;").replace(/</g,"&lt;");
+    return `<button class="fbtn${o.val===areaFilter?" active":""}" data-area="${esc}">${lbl}</button>`;
+  }).join("");
+  fb.querySelectorAll(".fbtn").forEach(b=>b.onclick=()=>{
+    areaFilter=b.dataset.area;
+    fb.querySelectorAll(".fbtn").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");
+    renderCurrent();
+  });
+}
+
+/* ============== DATA LOAD + AUTO-REFRESH ============== */
+const REFRESH_MS = 60000;   // auto-refresh interval (60s) — change as needed
+let refreshTimer=null, loading=false;
+
+function setUpdated(txt){ document.getElementById("updated").innerHTML=txt; }
+
+async function loadData(isFirst){
+  if(loading) return;
+  loading=true;
+  const btn=document.getElementById("refreshBtn");
+  const st=document.getElementById("status");
+  btn.disabled=true; btn.classList.add("spin");
+  setUpdated("Updating&hellip;");
+  try{
+    const [lamp,cal,pump,wh,ex]=await Promise.all([
+      gvizAll(SHEETS.lamp), gviz(SHEETS.calibration), gviz(SHEETS.pump),
+      gviz(SHEETS.waterheater), gviz(SHEETS.exhaust)
+    ]);
+    DATA.lamp=parseLamps(lamp);
+    DATA.calibration=parseGeneric(cal,{category:2,location:3,manuf:5,status:14,calStatus:17});
+    DATA.pump=parseGeneric(pump,{category:2,location:3,manuf:5,status:10,urgency:12});
+    DATA.waterheater=parseGeneric(wh,{name:1,category:2,location:3,manuf:5,status:9,urgency:11});
+    DATA.exhaust=parseGeneric(ex,{name:1,category:2,location:3,manuf:5,status:9,urgency:11});
+    /* Maintenance Schedule Log — separate workbooks; failure here must not break the core dashboard. */
+    try{
+      const [mMain,mPump]=await Promise.all([ gvizRaw(MAINT_ID,MAINT_SEL), gvizRaw(PUMP_ID,PUMP_SEL) ]);
+      MAINT=parseMaintMain(mMain);
+      MAINT.pump=parseMaintPump(mPump);
+    }catch(e){ /* keep previous MAINT; progress donuts will show last-known values */ }
+    /* One-year schedule tabs -> nearest service date + due-today list on the Overview. */
+    try{
+      const grids=await Promise.all(SCHEDULE_SHEETS.map(sp=>
+        gvizRaw(sp.id, "&sheet="+encodeURIComponent(sp.sheet), true).catch(()=>[])
+      ));
+      const all=[];
+      grids.forEach((g,i)=>{
+        const sp=SCHEDULE_SHEETS[i];
+        const eff=Object.assign({}, detectScheduleCols(g), sp);   // header-mapped cols; explicit sp cols win
+        parseSchedule(g, sp.asset, eff).forEach(rec=>all.push(rec));
+      });
+      SCHEDULE=all;
+    }catch(e){ /* keep previous SCHEDULE */ }
+    /* Area filter is rebuilt per selected chart (see selectChart / refresh path) */
+    updateBadges();
+    if(isFirst) showHome();
+    else if(mode==="home") renderHome();
+    else if(mode==="alerts") renderAlerts();
+    else if(mode==="maint" && currentDef) renderMaint(currentDef);
+    else if(currentDef){ buildAreaFilter(); renderCurrent(); }   // refresh: rebuild filter + redraw
+    const now=new Date();
+    setUpdated("Updated "+now.toLocaleTimeString());
+  }catch(e){
+    if(isFirst){
+      st.className="status err";
+      st.innerHTML="Could not load data from Google Sheets.<br><br>"+e.message+
+        "<br><br>Make sure the sheet is shared as <b>\u201cAnyone with the link \u2192 Viewer\u201d</b> "+
+        "and the tab names match the CONFIG at the top of this file.";
+    }
+    setUpdated("Update failed &mdash; retrying&hellip;");
+  }finally{
+    loading=false; btn.disabled=false; btn.classList.remove("spin");
+  }
+}
+
+function startAutoRefresh(){
+  if(refreshTimer) clearInterval(refreshTimer);
+  refreshTimer=setInterval(()=>{ if(!document.hidden) loadData(false); }, REFRESH_MS);
+}
+
+/* ============== INIT ============== */
+function initMobileNav(){
+  const aside=document.getElementById("asideNav");
+  const backdrop=document.getElementById("navBackdrop");
+  const hbtn=document.getElementById("hamburgerBtn");
+  const openNav=()=>{ aside.classList.add("open"); backdrop.classList.add("open"); };
+  const closeNav=()=>{ aside.classList.remove("open"); backdrop.classList.remove("open"); };
+  hbtn.onclick=()=>{ aside.classList.contains("open") ? closeNav() : openNav(); };
+  backdrop.onclick=closeNav;
+  // Close the drawer automatically after picking something, so the choice is immediately visible.
+  aside.addEventListener("click",e=>{
+    if(e.target.closest("button") && window.innerWidth<=860) closeNav();
+  });
+  window.addEventListener("resize",()=>{ if(window.innerWidth>860) closeNav(); });
+}
+
+function init(){
+  buildNav();   // slicer is built per-category by selectChart() after data loads
+  initMobileNav();
+  document.getElementById("refreshBtn").onclick=()=>loadData(false);
+  document.getElementById("bellBtn").onclick=showAlerts;
+  // refresh immediately when the tab regains focus
+  document.addEventListener("visibilitychange",()=>{ if(!document.hidden) loadData(false); });
+  loadData(true);
+  startAutoRefresh();
+}
+window.addEventListener("DOMContentLoaded",init);
+
+// Registers the service worker so Android/Chrome offers "Install app". Wrapped in a check
+// since this file also gets opened directly (file://) where service workers aren't allowed.
+if("serviceWorker" in navigator && (location.protocol==="https:"||location.protocol==="http:")){
+  window.addEventListener("load",()=>{
+    navigator.serviceWorker.register("service-worker.js").catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
